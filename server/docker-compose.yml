@@ -1,0 +1,22 @@
+# Deploy this file on the server machine (base station).
+# The Meshtastic board must be connected via USB before starting.
+services:
+  meshtastic-server:
+    build: .
+    container_name: meshtastic-server
+    restart: unless-stopped
+    devices:
+      # Adjust to match your actual USB serial device
+      - /dev/ttyACM1:/dev/ttyACM1
+    environment:
+      MESHTASTIC_PORT: /dev/ttyACM1
+      WEB_PORT: "5000"
+      MAP_OUTPUT: /app/static/map.html
+    ports:
+      - "5001:5000"
+    volumes:
+      # Optional: persist the map HTML across restarts
+      - map-data:/app/static
+
+volumes:
+  map-data:

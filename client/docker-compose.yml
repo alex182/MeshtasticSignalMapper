@@ -1,0 +1,16 @@
+# Deploy this file on the client machine (the car / Raspberry Pi).
+# The Meshtastic board must be connected via USB before starting.
+services:
+  meshtastic-client:
+    build: .
+    container_name: meshtastic-client
+    restart: unless-stopped
+    devices:
+      # Adjust to match your actual USB serial device (check: ls /dev/ttyUSB* or /dev/ttyACM*)
+      - /dev/ttyACM0:/dev/ttyACM0
+    environment:
+      MESHTASTIC_PORT: /dev/ttyACM0
+      SEND_INTERVAL: "10"        # seconds between GPS broadcasts
+      GPS_START_LAT: "39.0594"   # mock GPS starting latitude
+      GPS_START_LON: "-94.8827"  # mock GPS starting longitude
+      SERVER_NODE_ID: "!" # Meshtastic node ID of the server (run: meshtastic --info)

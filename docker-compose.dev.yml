@@ -1,0 +1,35 @@
+# Development compose: runs both client and server on one machine.
+# Assumes two Meshtastic boards are connected on /dev/ttyUSB0 and /dev/ttyUSB1.
+# If you only have one board, comment out the client service and run it manually.
+services:
+  meshtastic-client:
+    build: ./client
+    container_name: meshtastic-client-dev
+    restart: unless-stopped
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0
+    environment:
+      MESHTASTIC_PORT: /dev/ttyUSB0
+      SEND_INTERVAL: "10"
+      GPS_START_LAT: "37.7749"
+      GPS_START_LON: "-122.4194"
+    depends_on:
+      - meshtastic-server
+
+  meshtastic-server:
+    build: ./server
+    container_name: meshtastic-server-dev
+    restart: unless-stopped
+    devices:
+      - /dev/ttyUSB1:/dev/ttyUSB1
+    environment:
+      MESHTASTIC_PORT: /dev/ttyUSB1
+      WEB_PORT: "5000"
+      MAP_OUTPUT: /app/static/map.html
+    ports:
+      - "5000:5000"
+    volumes:
+      - map-data:/app/static
+
+volumes:
+  map-data:

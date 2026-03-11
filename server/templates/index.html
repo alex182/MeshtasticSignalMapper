@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Meshtastic Signal Mapper</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    header {
+      padding: 0.65rem 1rem;
+      background: #16213e;
+      border-bottom: 1px solid #0f3460;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 1rem; letter-spacing: 0.05em; }
+    #active-badge {
+      font-size: 0.75rem;
+      background: #0f3460;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      color: #90cdf4;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #refresh-control { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: #718096; }
+    #active-badge { margin-left: auto; }
+    #refresh-control select {
+      background: #0f3460;
+      color: #90cdf4;
+      border: none;
+      border-radius: 4px;
+      padding: 0.2rem 0.4rem;
+      font-size: 0.72rem;
+      cursor: pointer;
+    }
+    #btn-refresh-messages {
+      background: none;
+      color: #a0aec0;
+      border: none;
+      padding: 0;
+      font-size: 0.85rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+    #btn-refresh-messages:hover { color: #90cdf4; }
+    #refresh-messages {
+      background: #0f3460;
+      color: #90cdf4;
+      border: none;
+      border-radius: 4px;
+      padding: 0.15rem 0.3rem;
+      font-size: 0.68rem;
+      cursor: pointer;
+    }
+    #btn-refresh-map {
+      background: #0f3460;
+      color: #90cdf4;
+      border: none;
+      border-radius: 4px;
+      padding: 0.2rem 0.5rem;
+      font-size: 0.72rem;
+      cursor: pointer;
+    }
+    #btn-refresh-map:hover { background: #1a4a7a; }
+
+    .main { display: flex; flex: 1; overflow: hidden; }
+
+    /* ---- Sidebar ---- */
+    #sidebar {
+      width: 300px;
+      flex-shrink: 0;
+      background: #16213e;
+      border-right: 1px solid #0f3460;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Session panel */
+    #session-panel {
+      border-bottom: 1px solid #0f3460;
+      flex-shrink: 0;
+    }
+    #session-panel-header {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #a0aec0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    #btn-new-session {
+      background: #0f3460;
+      color: #90cdf4;
+      border: none;
+      border-radius: 4px;
+      padding: 0.2rem 0.5rem;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
+    #btn-new-session:hover { background: #1a4a7a; }
+
+    #new-session-form {
+      display: none;
+      padding: 0.5rem 0.75rem;
+      gap: 0.4rem;
+      flex-direction: column;
+      border-top: 1px solid #0f3460;
+    }
+    #new-session-form.open { display: flex; }
+    #new-session-form input {
+      background: #1a1a2e;
+      border: 1px solid #0f3460;
+      color: #eee;
+      border-radius: 4px;
+      padding: 0.3rem 0.5rem;
+      font-size: 0.8rem;
+      width: 100%;
+    }
+    #new-session-form input:focus { outline: none; border-color: #4a90d9; }
+    .form-row { display: flex; gap: 0.4rem; }
+    .form-row button {
+      flex: 1;
+      border: none;
+      border-radius: 4px;
+      padding: 0.3rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    #btn-create { background: #2b6cb0; color: #fff; }
+    #btn-create:hover { background: #2c7dd6; }
+    #btn-cancel { background: #2d3748; color: #a0aec0; }
+    #btn-cancel:hover { background: #3a4556; }
+    #form-error { color: #fc8181; font-size: 0.72rem; display: none; }
+
+    #session-list {
+      max-height: 180px;
+      overflow-y: auto;
+      border-top: 1px solid #0f3460;
+    }
+    #session-list::-webkit-scrollbar { width: 4px; }
+    #session-list::-webkit-scrollbar-track { background: #16213e; }
+    #session-list::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 2px; }
+
+    .session-row {
+      display: flex;
+      align-items: center;
+      padding: 0.4rem 0.75rem;
+      gap: 0.4rem;
+      cursor: pointer;
+      font-size: 0.78rem;
+      border-bottom: 1px solid #0f3460;
+    }
+    .session-row:hover { background: #1e2d50; }
+    .session-row.viewing { background: #1a3a5c; }
+    .session-row.active-session .session-name::after {
+      content: " •";
+      color: #68d391;
+    }
+    .session-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .session-count { font-size: 0.7rem; color: #718096; flex-shrink: 0; }
+    .btn-delete {
+      background: none;
+      border: none;
+      color: #718096;
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 0 0.2rem;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    .btn-delete:hover { color: #fc8181; }
+    #sessions-empty { padding: 0.6rem 0.75rem; color: #4a5568; font-size: 0.75rem; }
+
+    /* Readings list */
+    #readings-section {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      overflow: hidden;
+    }
+    #readings-header {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #a0aec0;
+      border-bottom: 1px solid #0f3460;
+      flex-shrink: 0;
+      display: flex;
+      justify-content: space-between;
+    }
+    #viewing-label { color: #90cdf4; font-weight: normal; text-transform: none; letter-spacing: 0; }
+    #readings-list { overflow-y: auto; flex: 1; }
+    #readings-list::-webkit-scrollbar { width: 6px; }
+    #readings-list::-webkit-scrollbar-track { background: #16213e; }
+    #readings-list::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
+
+    .reading-card {
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid #0f3460;
+      font-size: 0.78rem;
+      line-height: 1.6;
+      cursor: pointer;
+    }
+    .reading-card:hover { background: #1e2d50; }
+    .reading-card.highlighted { background: #1a3a5c; outline: 1px solid #4a90d9; }
+    .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
+    .seq { font-weight: 700; color: #90cdf4; }
+    .ts { color: #718096; font-size: 0.7rem; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.15rem 0.5rem; }
+    .stat-label { color: #a0aec0; }
+    .stat-value { font-weight: 600; }
+    .snr-good { color: #68d391; }
+    .snr-ok   { color: #f6ad55; }
+    .snr-bad  { color: #fc8181; }
+
+    #empty-state { padding: 1.5rem 0.75rem; color: #4a5568; font-size: 0.8rem; text-align: center; }
+
+    /* Map */
+    #map-frame { flex: 1; border: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Meshtastic Signal Mapper</h1>
+    <div id="refresh-control">
+      Map:
+      <button id="btn-refresh-map" title="Refresh now">↺</button>
+      <select id="refresh-map">
+        <option value="0">Off</option>
+        <option value="5000">5s</option>
+        <option value="10000" selected>10s</option>
+        <option value="30000">30s</option>
+        <option value="60000">60s</option>
+      </select>
+    </div>
+    <span id="active-badge">No active session</span>
+  </header>
+
+  <div class="main">
+    <aside id="sidebar">
+
+      <!-- Session panel -->
+      <div id="session-panel">
+        <div id="session-panel-header">
+          Sessions
+          <button id="btn-new-session">+ New</button>
+        </div>
+
+        <div id="new-session-form">
+          <input id="session-name-input" type="text" placeholder="Session name (e.g. Drive_2026-03-10)" maxlength="64" />
+          <div id="form-error"></div>
+          <div class="form-row">
+            <button id="btn-create">Create</button>
+            <button id="btn-cancel">Cancel</button>
+          </div>
+        </div>
+
+        <div id="session-list"></div>
+      </div>
+
+      <!-- Readings panel -->
+      <div id="readings-section">
+        <div id="readings-header">
+          Messages
+          <span id="viewing-label"></span>
+          <div style="display:flex;align-items:center;gap:0.3rem;margin-left:auto">
+            <button id="btn-refresh-messages" title="Refresh messages">↺</button>
+            <select id="refresh-messages">
+              <option value="0">Off</option>
+              <option value="5000">5s</option>
+              <option value="10000" selected>10s</option>
+              <option value="30000">30s</option>
+              <option value="60000">60s</option>
+            </select>
+          </div>
+        </div>
+        <div id="readings-list">
+          <div id="empty-state">No messages yet</div>
+        </div>
+      </div>
+
+    </aside>
+
+    <iframe id="map-frame" src="/map"></iframe>
+  </div>
+
+  <script>
+    let viewingSession = null; // null = live/active
+
+    // ---- Utilities ----
+
+    function snrClass(snr) {
+      if (snr >= 7) return 'snr-good';
+      if (snr >= 3) return 'snr-ok';
+      return 'snr-bad';
+    }
+
+    function formatTime(iso) {
+      try { return new Date(iso).toLocaleTimeString(); } catch (_) { return iso; }
+    }
+
+    function highlightMarker(originalIndex) {
+      document.querySelectorAll('.reading-card').forEach(el => el.classList.remove('highlighted'));
+      const card = document.querySelector(`.reading-card[data-index="${originalIndex}"]`);
+      if (card) card.classList.add('highlighted');
+      const iframe = document.getElementById('map-frame');
+      iframe.contentWindow.postMessage({ type: 'highlight', index: originalIndex }, '*');
+    }
+
+    function buildCard(reading, seq, originalIndex) {
+      const cls = snrClass(reading.snr);
+      return `
+        <div class="reading-card" data-index="${originalIndex}" onclick="highlightMarker(${originalIndex})">
+          <div class="card-top">
+            <span class="seq">#${seq}</span>
+            <span class="ts">${formatTime(reading.timestamp)}</span>
+          </div>
+          <div class="stats">
+            <span class="stat-label">SNR</span>
+            <span class="stat-value ${cls}">${reading.snr} dB</span>
+            <span class="stat-label">RSSI</span>
+            <span class="stat-value">${reading.rssi} dBm</span>
+            <span class="stat-label">Lat</span>
+            <span class="stat-value">${reading.lat.toFixed(5)}</span>
+            <span class="stat-label">Lon</span>
+            <span class="stat-value">${reading.lon.toFixed(5)}</span>
+            <span class="stat-label">Hops</span>
+            <span class="stat-value">${reading.hopsAway ?? '—'}</span>
+            <span class="stat-label">ID</span>
+            <span class="stat-value" style="color:#718096">${reading.messageId.slice(0, 8)}…</span>
+          </div>
+        </div>`;
+    }
+
+    // ---- Session list ----
+
+    async function loadSessions() {
+      const res = await fetch('/api/sessions');
+      return await res.json();
+    }
+
+    async function renderSessionList() {
+      const sessions = await loadSessions();
+      const list = document.getElementById('session-list');
+
+      if (sessions.length === 0) {
+        list.innerHTML = '<div id="sessions-empty">No saved sessions</div>';
+        return;
+      }
+
+      list.innerHTML = sessions.map(s => `
+        <div class="session-row ${s.active ? 'active-session' : ''} ${viewingSession === s.name ? 'viewing' : ''}"
+             data-name="${s.name}" onclick="viewSession('${s.name}')">
+          <span class="session-name">${s.name}</span>
+          <span class="session-count">${s.count} pts</span>
+          ${!s.active ? `<button class="btn-delete" title="Delete session"
+            onclick="deleteSession(event, '${s.name}')">✕</button>` : ''}
+        </div>`).join('');
+    }
+
+    // ---- View a session ----
+
+    async function viewSession(name) {
+      viewingSession = name;
+
+      // Update map
+      const mapSrc = name === null
+        ? '/map?' + Date.now()
+        : `/api/sessions/${encodeURIComponent(name)}/map?` + Date.now();
+      document.getElementById('map-frame').src = mapSrc;
+
+      // Load readings for this session
+      const url = name === null ? '/api/readings' : `/api/sessions/${encodeURIComponent(name)}/readings`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      document.getElementById('viewing-label').textContent = name || '';
+      renderReadings(data);
+      renderSessionList(); // refresh highlight
+    }
+
+    function renderReadings(data) {
+      const list = document.getElementById('readings-list');
+      if (data.length === 0) {
+        list.innerHTML = '<div id="empty-state">No messages yet</div>';
+        return;
+      }
+      // Show newest first; originalIndex is the 0-based index in the data array
+      const reversed = [...data].reverse();
+      list.innerHTML = reversed.map((r, i) => {
+        const originalIndex = data.length - 1 - i;
+        return buildCard(r, data.length - i, originalIndex);
+      }).join('');
+    }
+
+    // ---- Delete session ----
+
+    async function deleteSession(evt, name) {
+      evt.stopPropagation();
+      if (!confirm(`Delete session "${name}"?`)) return;
+      await fetch(`/api/sessions/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      if (viewingSession === name) { viewingSession = null; viewSession(null); }
+      renderSessionList();
+    }
+
+    // ---- Create new session form ----
+
+    document.getElementById('btn-new-session').addEventListener('click', () => {
+      document.getElementById('new-session-form').classList.toggle('open');
+      document.getElementById('session-name-input').focus();
+    });
+
+    document.getElementById('btn-cancel').addEventListener('click', () => {
+      document.getElementById('new-session-form').classList.remove('open');
+      document.getElementById('session-name-input').value = '';
+      document.getElementById('form-error').style.display = 'none';
+    });
+
+    document.getElementById('btn-create').addEventListener('click', createSession);
+    document.getElementById('session-name-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') createSession();
+    });
+
+    async function createSession() {
+      const name = document.getElementById('session-name-input').value.trim();
+      if (!name) return;
+
+      const res = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const body = await res.json();
+
+      if (!res.ok) {
+        const err = document.getElementById('form-error');
+        err.textContent = body.error || 'Error creating session';
+        err.style.display = 'block';
+        return;
+      }
+
+      document.getElementById('new-session-form').classList.remove('open');
+      document.getElementById('session-name-input').value = '';
+      document.getElementById('form-error').style.display = 'none';
+      viewingSession = null; // switch back to live view
+      refreshSidebar();
+      refreshMap();
+    }
+
+    // ---- Refresh functions ----
+
+    async function refreshActiveBadge() {
+      const res = await fetch('/api/sessions/active');
+      const data = await res.json();
+      document.getElementById('active-badge').textContent =
+        data.name ? `Session: ${data.name}` : 'No active session';
+    }
+
+    async function refreshSidebar() {
+      await Promise.all([renderSessionList(), refreshActiveBadge()]);
+      if (viewingSession === null) {
+        const res = await fetch('/api/readings');
+        const data = await res.json();
+        renderReadings(data);
+      }
+    }
+
+    function refreshMap() {
+      if (viewingSession === null) {
+        document.getElementById('map-frame').src = '/map?' + Date.now();
+      }
+    }
+
+    // ---- Refresh timers ----
+
+    let messagesTimer = null;
+    let mapTimer = null;
+
+    function startMessagesTimer(ms) {
+      if (messagesTimer) clearInterval(messagesTimer);
+      messagesTimer = ms > 0 ? setInterval(refreshSidebar, ms) : null;
+    }
+
+    function startMapTimer(ms) {
+      if (mapTimer) clearInterval(mapTimer);
+      mapTimer = ms > 0 ? setInterval(refreshMap, ms) : null;
+    }
+
+    document.getElementById('btn-refresh-messages').addEventListener('click', refreshSidebar);
+    document.getElementById('btn-refresh-map').addEventListener('click', refreshMap);
+
+    document.getElementById('refresh-messages').addEventListener('change', function() {
+      startMessagesTimer(parseInt(this.value, 10));
+    });
+    document.getElementById('refresh-map').addEventListener('change', function() {
+      startMapTimer(parseInt(this.value, 10));
+    });
+
+    // ---- Init ----
+    refreshSidebar();
+    refreshMap();
+    startMessagesTimer(10000);
+    startMapTimer(10000);
+  </script>
+</body>
+</html>
