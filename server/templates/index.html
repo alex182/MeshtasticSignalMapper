@@ -346,6 +346,8 @@
             <span class="stat-value">${reading.lat.toFixed(5)}</span>
             <span class="stat-label">Lon</span>
             <span class="stat-value">${reading.lon.toFixed(5)}</span>
+            <span class="stat-label">Elevation</span>
+            <span class="stat-value">${reading.elevation.toFixed(1)} ft</span>
             <span class="stat-label">Hops</span>
             <span class="stat-value">${reading.hopsAway ?? '—'}</span>
             <span class="stat-label">ID</span>
@@ -521,8 +523,23 @@
     // ---- Init ----
     refreshSidebar();
     refreshMap();
-    startMessagesTimer(10000);
-    startMapTimer(10000);
+
+    document.getElementById('refresh-messages').addEventListener('change', function() {
+    if(this.value === 'Off') {
+      return;
+    }
+      
+      startMessagesTimer(parseInt(this.value, 10));
+    });
+
+    document.getElementById('refresh-map').addEventListener('change', function() {
+    if(this.value === 'Off') {
+        return;
+      }
+
+      startMapTimer(parseInt(this.value, 10));
+    });
+
   </script>
 </body>
 </html>
