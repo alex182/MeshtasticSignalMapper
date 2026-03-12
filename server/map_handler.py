@@ -31,7 +31,7 @@ def render_points_to_file(points: list[dict], output_path: str) -> None:
     else:
         center = DEFAULT_CENTER
 
-    m = folium.Map(location=center, zoom_start=14, tiles="OpenStreetMap")
+    m = folium.Map(location=center, zoom_start=14, tiles="Cartodb dark_matter")
 
     if points:
         coords = [(p["lat"], p["lon"]) for p in points]

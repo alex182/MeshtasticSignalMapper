@@ -521,8 +521,23 @@
     // ---- Init ----
     refreshSidebar();
     refreshMap();
-    startMessagesTimer(10000);
-    startMapTimer(10000);
+
+    document.getElementById('refresh-messages').addEventListener('change', function() {
+    if(this.value === 'Off') {
+      return;
+    }
+      
+      startMessagesTimer(parseInt(this.value, 10));
+    });
+
+    document.getElementById('refresh-map').addEventListener('change', function() {
+    if(this.value === 'Off') {
+        return;
+      }
+
+      startMapTimer(parseInt(this.value, 10));
+    });
+    
   </script>
 </body>
 </html>
