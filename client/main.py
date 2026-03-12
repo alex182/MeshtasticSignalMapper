@@ -59,13 +59,15 @@ def send_location() -> str:
         "lat": reading.lat,
         "lon": reading.lon,
         "timestamp": reading.timestamp,
+        "elevation": reading.elevation
     }
     interface.sendText(json.dumps(payload), destinationId=SERVER_NODE_ID)
     logger.info(
-        "Sent | messageId=%s | lat=%s | lon=%s",
+        "Sent | messageId=%s | lat=%s | lon=%s | elevation=%s m",
         message_id,
         reading.lat,
         reading.lon,
+        reading.elevation
     )
     return message_id
 

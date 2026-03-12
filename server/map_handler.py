@@ -55,6 +55,7 @@ def render_points_to_file(points: list[dict], output_path: str) -> None:
                 f"SNR: {pt['snr']} dB<br>"
                 f"RSSI: {pt['rssi']} dBm<br>"
                 f"Time: {pt['timestamp']}<br>"
+                f"Elevation: {pt['elevation']} m<br>"
                 f"ID: {msg_id[:8]}…"
             )
             tooltip_text = f"#{idx + 1} | SNR: {pt['snr']} dB | RSSI: {pt['rssi']} dBm"
@@ -118,6 +119,7 @@ class MapHandler:
         lon: float,
         snr: float,
         rssi: int,
+        elevation: float,   
         message_id: str,
         timestamp: str,
     ) -> None:
@@ -128,6 +130,7 @@ class MapHandler:
                     "lon": lon,
                     "snr": snr,
                     "rssi": rssi,
+                    "elevation": elevation,
                     "message_id": message_id,
                     "timestamp": timestamp,
                 }

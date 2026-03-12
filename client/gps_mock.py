@@ -8,6 +8,7 @@ class GPSReading:
     lat: float
     lon: float
     timestamp: str
+    elevation: float
 
 
 class GPSMock:
@@ -29,4 +30,5 @@ class GPSMock:
             lat=round(self.lat, 6),
             lon=round(self.lon, 6),
             timestamp=datetime.now(timezone.utc).isoformat(),
+            elevation=round(random.uniform(800, 1050),10)
         )
