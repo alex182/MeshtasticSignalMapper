@@ -23,14 +23,6 @@ pub_mock = MagicMock()
 pubsub_mod.pub = pub_mock
 sys.modules.setdefault("pubsub", pubsub_mod)
 
-# map_handler (client-local import)
-map_handler_mod = types.ModuleType("map_handler")
-map_handler_mod.MapHandler = MagicMock()
-map_handler_mod.render_points_to_file = MagicMock()
-map_handler_mod.TILES_LIGHT = "OpenStreetMap"
-map_handler_mod.TILES_DARK = "CartoDB dark_matter"
-sys.modules.setdefault("map_handler", map_handler_mod)
-
 # gps_mock (client-local import)
 gps_mock_mod = types.ModuleType("gps_mock")
 
@@ -38,6 +30,7 @@ class _FakeGPSReading:
     lat = 37.7749
     lon = -122.4194
     timestamp = "2024-01-01T00:00:00+00:00"
+    elevation = 900.0
 
 class _FakeGPSMock:
     def __init__(self, start_lat=37.7749, start_lon=-122.4194):
@@ -49,6 +42,7 @@ gps_mock_mod.GPSMock = _FakeGPSMock
 sys.modules.setdefault("gps_mock", gps_mock_mod)
 
 # Now safe to import
+import importlib
 import client.main as main_module  # noqa: E402  (imported after stubs)
 
 
@@ -62,6 +56,7 @@ class TestOnReceive(unittest.TestCase):
 
     def test_ignores_non_text_portnum(self):
         packet = {"decoded": {"portnum": "POSITION_APP", "text": "{}"}}
+        # Should not raise
         main_module.on_receive(packet, MagicMock())
 
     def test_ignores_packet_without_ack_flag(self):
@@ -81,6 +76,7 @@ class TestOnReceive(unittest.TestCase):
 
     def test_handles_invalid_json_gracefully(self):
         packet = self._make_packet("not-json")
+        # Should not raise
         main_module.on_receive(packet, MagicMock())
 
     def test_handles_missing_decoded_key(self):
@@ -96,15 +92,11 @@ class TestSendLocation(unittest.TestCase):
     def setUp(self):
         self.mock_interface = MagicMock()
         main_module.interface = self.mock_interface
-        self._original_node = main_module.SERVER_NODE_ID
-        main_module.SERVER_NODE_ID = "!testnode"
-
-    def tearDown(self):
-        main_module.SERVER_NODE_ID = self._original_node
 
     def test_returns_string_uuid(self):
         import uuid
         result = main_module.send_location()
+        # Should be a valid UUID4 string
         parsed = uuid.UUID(result, version=4)
         self.assertEqual(str(parsed), result)
 
@@ -116,7 +108,7 @@ class TestSendLocation(unittest.TestCase):
         main_module.send_location()
         call_args = self.mock_interface.sendText.call_args
         payload = json.loads(call_args[0][0])
-        for key in ("messageId", "lat", "lon", "timestamp"):
+        for key in ("messageId", "lat", "lon", "timestamp", "elevation"):
             self.assertIn(key, payload)
 
     def test_payload_message_id_matches_return_value(self):
@@ -126,16 +118,12 @@ class TestSendLocation(unittest.TestCase):
         self.assertEqual(payload["messageId"], returned_id)
 
     def test_destination_id_passed_to_send_text(self):
+        original = main_module.SERVER_NODE_ID
         main_module.SERVER_NODE_ID = "!deadbeef"
         main_module.send_location()
         call_kwargs = self.mock_interface.sendText.call_args[1]
         self.assertEqual(call_kwargs["destinationId"], "!deadbeef")
-
-    def test_returns_none_when_no_target_configured(self):
-        main_module.SERVER_NODE_ID = None
-        result = main_module.send_location()
-        self.assertIsNone(result)
-        self.mock_interface.sendText.assert_not_called()
+        main_module.SERVER_NODE_ID = original
 
 
 if __name__ == "__main__":

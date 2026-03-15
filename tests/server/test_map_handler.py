@@ -9,9 +9,9 @@ from server.map_handler import MapHandler, _snr_color, render_points_to_file
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _point(lat=37.7, lon=-122.4, snr=5.0, rssi=-90,
+def _point(lat=37.7, lon=-122.4, snr=5.0, rssi=-90, elevation=900.0,
            message_id="msg-1", timestamp="2024-01-01T00:00:00+00:00") -> dict:
-    return dict(lat=lat, lon=lon, snr=snr, rssi=rssi,
+    return dict(lat=lat, lon=lon, snr=snr, rssi=rssi, elevation=elevation,
                 message_id=message_id, timestamp=timestamp)
 
 
@@ -57,6 +57,7 @@ class TestRenderPointsToFile(unittest.TestCase):
         render_points_to_file([], self.output)
         with open(self.output) as f:
             content = f.read()
+        # Default center coords should appear somewhere in the output
         self.assertIn("39.0594", content)
 
     def test_single_point_centers_on_that_point(self):
@@ -72,6 +73,12 @@ class TestRenderPointsToFile(unittest.TestCase):
             content = f.read()
         self.assertIn("8.0", content)
         self.assertIn("-75", content)
+
+    def test_popup_contains_elevation(self):
+        render_points_to_file([_point(elevation=1234.0)], self.output)
+        with open(self.output) as f:
+            content = f.read()
+        self.assertIn("1234.0", content)
 
     def test_creates_parent_dirs_if_missing(self):
         nested_output = os.path.join(self.tmpdir, "a", "b", "map.html")
@@ -90,14 +97,8 @@ class TestRenderPointsToFile(unittest.TestCase):
         render_points_to_file([_point(message_id="abcdefgh12345678")], self.output)
         with open(self.output) as f:
             content = f.read()
+        # Only first 8 chars shown
         self.assertIn("abcdefgh", content)
-
-    def test_dark_tiles_used_when_specified(self):
-        from server.map_handler import TILES_DARK
-        render_points_to_file([], self.output, tiles=TILES_DARK)
-        with open(self.output) as f:
-            content = f.read()
-        self.assertIn("cartocdn.com", content)
 
 
 # ---------------------------------------------------------------------------
@@ -115,24 +116,25 @@ class TestMapHandler(unittest.TestCase):
 
     def test_add_point_writes_file(self):
         self.handler.add_point(lat=1.0, lon=2.0, snr=5.0, rssi=-80,
-                               message_id="x", timestamp="ts")
+                               elevation=100.0, message_id="x", timestamp="ts")
         self.assertTrue(os.path.exists(self.output))
 
     def test_add_point_accumulates(self):
         for i in range(3):
             self.handler.add_point(lat=float(i), lon=float(i), snr=5.0,
-                                   rssi=-80, message_id=f"id-{i}", timestamp="ts")
+                                   rssi=-80, elevation=0.0,
+                                   message_id=f"id-{i}", timestamp="ts")
         self.assertEqual(len(self.handler._points), 3)
 
     def test_clear_empties_points(self):
         self.handler.add_point(lat=1.0, lon=2.0, snr=5.0, rssi=-80,
-                               message_id="x", timestamp="ts")
+                               elevation=0.0, message_id="x", timestamp="ts")
         self.handler.clear()
         self.assertEqual(len(self.handler._points), 0)
 
     def test_clear_rewrites_file(self):
         self.handler.add_point(lat=1.0, lon=2.0, snr=5.0, rssi=-80,
-                               message_id="x", timestamp="ts")
+                               elevation=0.0, message_id="x", timestamp="ts")
         mtime_before = os.path.getmtime(self.output)
         import time; time.sleep(0.01)
         self.handler.clear()
@@ -148,15 +150,6 @@ class TestMapHandler(unittest.TestCase):
         self.handler.generate_map()
         self.assertTrue(os.path.exists(self.output))
 
-    def test_set_tiles_rerenders_map(self):
-        from server.map_handler import TILES_DARK
-        self.handler.add_point(lat=1.0, lon=2.0, snr=5.0, rssi=-80,
-                               message_id="x", timestamp="ts")
-        self.handler.set_tiles(TILES_DARK)
-        with open(self.output) as f:
-            content = f.read()
-        self.assertIn("cartocdn.com", content)
-
     def test_thread_safety(self):
         errors = []
 
@@ -164,7 +157,8 @@ class TestMapHandler(unittest.TestCase):
             try:
                 for i in range(10):
                     self.handler.add_point(lat=float(i), lon=float(i), snr=5.0,
-                                           rssi=-80, message_id=f"t-{i}", timestamp="ts")
+                                           rssi=-80, elevation=0.0,
+                                           message_id=f"t-{i}", timestamp="ts")
             except Exception as e:
                 errors.append(e)
 

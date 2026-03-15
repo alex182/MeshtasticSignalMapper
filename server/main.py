@@ -124,11 +124,12 @@ def on_receive(packet, interface):
         message_id: str = data["messageId"]
         lat: float = data["lat"]
         lon: float = data["lon"]
+        elevation: float = data.get("elevation", 0.0)
         timestamp: str = data.get("timestamp", datetime.now(timezone.utc).isoformat())
 
         logger.info(
-            "Received | messageId=%s | lat=%s | lon=%s | SNR=%s dB | RSSI=%s dBm | hops=%s",
-            message_id, lat, lon, snr, rssi, hops_away,
+            "Received | messageId=%s | lat=%s | lon=%s | SNR=%s dB | RSSI=%s dBm | Elevation=%s m | hops=%s",
+            message_id, lat, lon, snr, rssi, elevation, hops_away,
         )
 
         reading = {
@@ -138,6 +139,7 @@ def on_receive(packet, interface):
             "timestamp": timestamp,
             "snr": snr,
             "rssi": rssi,
+            "elevation": elevation,
             "hopsAway": hops_away,
         }
         readings.append(reading)
@@ -148,12 +150,13 @@ def on_receive(packet, interface):
             lon=lon,
             snr=snr,
             rssi=rssi,
+            elevation=elevation,
             message_id=message_id,
             timestamp=timestamp,
         )
 
         ack_payload = json.dumps(
-            {"messageId": message_id, "snr": snr, "rssi": rssi, "ack": True}
+            {"messageId": message_id, "snr": snr, "elevation": elevation, "rssi": rssi, "ack": True}
         )
         sender_id = packet.get("fromId") or packet.get("from")
         interface.sendText(ack_payload, destinationId=sender_id)

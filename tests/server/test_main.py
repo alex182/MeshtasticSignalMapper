@@ -2,7 +2,7 @@ import json
 import sys
 import types
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, mock_open
 import tempfile
 import os
 
@@ -27,8 +27,6 @@ sys.modules.setdefault("pubsub", pubsub_mod)
 map_handler_mod = types.ModuleType("map_handler")
 map_handler_mod.MapHandler = MagicMock()
 map_handler_mod.render_points_to_file = MagicMock()
-map_handler_mod.TILES_LIGHT = "OpenStreetMap"
-map_handler_mod.TILES_DARK = "CartoDB dark_matter"
 sys.modules.setdefault("map_handler", map_handler_mod)
 
 # Redirect paths that are created at module-load time
@@ -55,11 +53,12 @@ def _make_packet(text: str, snr: float = 5.0, rssi: int = -90,
     }
 
 
-def _location_text(message_id="msg-1", lat=37.7, lon=-122.4) -> str:
+def _location_text(message_id="msg-1", lat=37.7, lon=-122.4, elevation=900.0) -> str:
     return json.dumps({
         "messageId": message_id,
         "lat": lat,
         "lon": lon,
+        "elevation": elevation,
         "timestamp": "2024-01-01T00:00:00+00:00",
     })
 
@@ -114,13 +113,14 @@ class TestOnReceive(unittest.TestCase):
         self.assertEqual(len(main_module.readings), 1)
 
     def test_reading_contains_expected_fields(self):
-        packet = _make_packet(_location_text(message_id="test-id", lat=1.1, lon=2.2),
+        packet = _make_packet(_location_text(message_id="test-id", lat=1.1, lon=2.2, elevation=500.0),
                                snr=7.5, rssi=-80)
         main_module.on_receive(packet, self.mock_interface)
         r = main_module.readings[0]
         self.assertEqual(r["messageId"], "test-id")
         self.assertAlmostEqual(r["lat"], 1.1)
         self.assertAlmostEqual(r["lon"], 2.2)
+        self.assertAlmostEqual(r["elevation"], 500.0)
         self.assertAlmostEqual(r["snr"], 7.5)
         self.assertEqual(r["rssi"], -80)
 
@@ -165,6 +165,12 @@ class TestOnReceive(unittest.TestCase):
         dest = self.mock_interface.sendText.call_args[1]["destinationId"]
         self.assertEqual(dest, "!node99")
 
+    def test_elevation_defaults_to_zero_when_missing(self):
+        text = json.dumps({"messageId": "x", "lat": 1.0, "lon": 2.0})
+        packet = _make_packet(text)
+        main_module.on_receive(packet, self.mock_interface)
+        self.assertEqual(main_module.readings[0]["elevation"], 0.0)
+
 
 # ---------------------------------------------------------------------------
 # Tests: Flask routes (via test client)
@@ -208,9 +214,11 @@ class TestFlaskRoutes(unittest.TestCase):
     def test_api_create_session_conflict(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             main_module.SESSIONS_DIR = tmpdir
+            # Create first
             self.client.post("/api/sessions",
                              data=json.dumps({"name": "dupe"}),
                              content_type="application/json")
+            # Try again
             resp = self.client.post("/api/sessions",
                                     data=json.dumps({"name": "dupe"}),
                                     content_type="application/json")
