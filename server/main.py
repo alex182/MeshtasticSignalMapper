@@ -12,7 +12,7 @@ import meshtastic.serial_interface
 from pubsub import pub
 from flask import Flask, jsonify, render_template, request, send_file, abort
 
-from map_handler import MapHandler, render_points_to_file
+from map_handler import MapHandler, render_points_to_file, TILES_LIGHT, TILES_DARK
 
 logging.basicConfig(
     level=logging.INFO,
@@ -247,6 +247,16 @@ def api_session_map(name):
         render_points_to_file(data.get("readings", []), map_path)
 
     return send_file(map_path, mimetype="text/html")
+
+
+@app.route("/api/map-style", methods=["POST"])
+def api_set_map_style():
+    body = request.get_json(silent=True) or {}
+    dark = body.get("dark", False)
+    tiles = TILES_DARK if dark else TILES_LIGHT
+    map_handler.set_tiles(tiles)
+    logger.info("Map tiles set to %s", tiles)
+    return jsonify({"dark": dark, "tiles": tiles})
 
 
 @app.route("/api/sessions/<name>", methods=["DELETE"])

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Meshtastic Signal Mapper</title>
+  <title>Meshtastic Signal Mapper — Server</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -27,6 +27,15 @@
       flex-shrink: 0;
     }
     header h1 { font-size: 1rem; letter-spacing: 0.05em; }
+    .role-badge {
+      font-size: 0.72rem;
+      background: #1a3a5c;
+      color: #63b3ed;
+      border: 1px solid #2b6cb0;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
     #active-badge {
       font-size: 0.75rem;
       background: #0f3460;
@@ -37,9 +46,9 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      margin-left: auto;
     }
     #refresh-control { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: #718096; }
-    #active-badge { margin-left: auto; }
     #refresh-control select {
       background: #0f3460;
       color: #90cdf4;
@@ -59,16 +68,7 @@
       line-height: 1;
     }
     #btn-refresh-messages:hover { color: #90cdf4; }
-    #refresh-messages {
-      background: #0f3460;
-      color: #90cdf4;
-      border: none;
-      border-radius: 4px;
-      padding: 0.15rem 0.3rem;
-      font-size: 0.68rem;
-      cursor: pointer;
-    }
-    #btn-refresh-map {
+    #btn-refresh-map, #btn-map-style {
       background: #0f3460;
       color: #90cdf4;
       border: none;
@@ -77,7 +77,8 @@
       font-size: 0.72rem;
       cursor: pointer;
     }
-    #btn-refresh-map:hover { background: #1a4a7a; }
+    #btn-refresh-map:hover, #btn-map-style:hover { background: #1a4a7a; }
+    #btn-map-style.dark { background: #1a1a2e; color: #90cdf4; border: 1px solid #0f3460; }
 
     .main { display: flex; flex: 1; overflow: hidden; }
 
@@ -90,7 +91,27 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      transition: width 0.2s ease;
     }
+    #sidebar.collapsed { width: 0; border-right: none; }
+    #sidebar.maximized { flex: 1; width: auto; border-right: none; }
+
+    #sidebar-toggle {
+      width: 12px;
+      flex-shrink: 0;
+      background: #0f3460;
+      border: none;
+      border-right: 1px solid #16213e;
+      color: #4a6080;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.6rem;
+      padding: 0;
+      transition: color 0.15s;
+    }
+    #sidebar-toggle:hover { background: #1a4a7a; color: #90cdf4; }
 
     /* Session panel */
     #session-panel {
@@ -208,13 +229,54 @@
       border-bottom: 1px solid #0f3460;
       flex-shrink: 0;
       display: flex;
-      justify-content: space-between;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    #readings-header .header-right {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      margin-left: auto;
     }
     #viewing-label { color: #90cdf4; font-weight: normal; text-transform: none; letter-spacing: 0; }
     #readings-list { overflow-y: auto; flex: 1; }
     #readings-list::-webkit-scrollbar { width: 6px; }
     #readings-list::-webkit-scrollbar-track { background: #16213e; }
     #readings-list::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
+
+    /* Table view */
+    #msg-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
+    #msg-table thead th {
+      position: sticky;
+      top: 0;
+      background: #16213e;
+      color: #718096;
+      font-weight: 600;
+      text-align: left;
+      padding: 0.3rem 0.4rem;
+      border-bottom: 1px solid #0f3460;
+      white-space: nowrap;
+    }
+    #msg-table tbody tr {
+      border-bottom: 1px solid #0f3460;
+      cursor: pointer;
+    }
+    #msg-table tbody tr:hover { background: #1e2d50; }
+    #msg-table tbody tr.highlighted { background: #1a3a5c; outline: 1px solid #4a90d9; }
+    #msg-table td { padding: 0.3rem 0.4rem; white-space: nowrap; }
+    #msg-table td.td-seq { color: #90cdf4; font-weight: 700; }
+
+    #btn-view-toggle, #btn-maximize-sidebar {
+      background: #0f3460;
+      color: #718096;
+      border: none;
+      border-radius: 4px;
+      padding: 0.15rem 0.45rem;
+      font-size: 0.68rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #btn-view-toggle.active, #btn-maximize-sidebar.active { background: #2b6cb0; color: #fff; }
 
     .reading-card {
       padding: 0.6rem 0.75rem;
@@ -235,6 +297,16 @@
     .snr-ok   { color: #f6ad55; }
     .snr-bad  { color: #fc8181; }
 
+    #refresh-messages {
+      background: #0f3460;
+      color: #90cdf4;
+      border: none;
+      border-radius: 4px;
+      padding: 0.15rem 0.3rem;
+      font-size: 0.68rem;
+      cursor: pointer;
+    }
+
     #empty-state { padding: 1.5rem 0.75rem; color: #4a5568; font-size: 0.8rem; text-align: center; }
 
     /* Map */
@@ -244,8 +316,10 @@
 <body>
   <header>
     <h1>Meshtastic Signal Mapper</h1>
+    <span class="role-badge">SERVER</span>
     <div id="refresh-control">
       Map:
+      <button id="btn-map-style" title="Switch to dark map">Dark</button>
       <button id="btn-refresh-map" title="Refresh now">↺</button>
       <select id="refresh-map">
         <option value="0">Off</option>
@@ -285,7 +359,9 @@
         <div id="readings-header">
           Messages
           <span id="viewing-label"></span>
-          <div style="display:flex;align-items:center;gap:0.3rem;margin-left:auto">
+          <div class="header-right">
+            <button id="btn-view-toggle" title="Toggle table view">Table</button>
+            <button id="btn-maximize-sidebar" title="Expand to full width">⤢</button>
             <button id="btn-refresh-messages" title="Refresh messages">↺</button>
             <select id="refresh-messages">
               <option value="0">Off</option>
@@ -303,11 +379,14 @@
 
     </aside>
 
+    <button id="sidebar-toggle" title="Toggle sidebar">&#x276E;</button>
     <iframe id="map-frame" src="/map"></iframe>
   </div>
 
   <script>
     let viewingSession = null; // null = live/active
+    let tableView = false;
+    let lastReadings = null;
 
     // ---- Utilities ----
 
@@ -354,6 +433,76 @@
         </div>`;
     }
 
+    function buildTable(data) {
+      if (data.length === 0) return '';
+      const rows = [...data].reverse().map((r, i) => {
+        const originalIndex = data.length - 1 - i;
+        const cls = snrClass(r.snr);
+        return `<tr onclick="highlightMarker(${originalIndex})">
+          <td class="td-seq">${data.length - i}</td>
+          <td>${formatTime(r.timestamp)}</td>
+          <td>${r.lat.toFixed(4)}</td>
+          <td>${r.lon.toFixed(4)}</td>
+          <td><span class="${cls}">${r.snr}</span></td>
+          <td>${r.rssi}</td>
+          <td>${r.hopsAway ?? '—'}</td>
+        </tr>`;
+      }).join('');
+      return `<table id="msg-table">
+        <thead><tr>
+          <th>#</th><th>Time</th><th>Lat</th><th>Lon</th>
+          <th>SNR</th><th>RSSI</th><th>Hops</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+
+    // ---- Sidebar maximize ----
+
+    document.getElementById('btn-maximize-sidebar').addEventListener('click', function() {
+      const sidebar = document.getElementById('sidebar');
+      const maximized = sidebar.classList.toggle('maximized');
+      document.getElementById('sidebar-toggle').style.display = maximized ? 'none' : '';
+      document.getElementById('map-frame').style.display = maximized ? 'none' : '';
+      this.classList.toggle('active', maximized);
+      this.innerHTML = maximized ? '⤡' : '⤢';
+      this.title = maximized ? 'Restore' : 'Expand to full width';
+    });
+
+    // ---- Sidebar toggle ----
+
+    document.getElementById('sidebar-toggle').addEventListener('click', function() {
+      const sidebar = document.getElementById('sidebar');
+      const collapsed = sidebar.classList.toggle('collapsed');
+      this.innerHTML = collapsed ? '&#x276F;' : '&#x276E;';
+      this.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    });
+
+    // ---- View toggle ----
+
+    document.getElementById('btn-view-toggle').addEventListener('click', function() {
+      tableView = !tableView;
+      this.classList.toggle('active', tableView);
+      if (lastReadings) renderReadings(lastReadings);
+    });
+
+    // ---- Map style toggle ----
+
+    let darkMap = false;
+
+    document.getElementById('btn-map-style').addEventListener('click', async function() {
+      darkMap = !darkMap;
+      this.classList.toggle('dark', darkMap);
+      this.textContent = darkMap ? 'Light' : 'Dark';
+      this.title = darkMap ? 'Switch to light map' : 'Switch to dark map';
+      await fetch('/api/map-style', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dark: darkMap }),
+      });
+      refreshMap();
+    });
+
     // ---- Session list ----
 
     async function loadSessions() {
@@ -385,20 +534,19 @@
     async function viewSession(name) {
       viewingSession = name;
 
-      // Update map
       const mapSrc = name === null
         ? '/map?' + Date.now()
         : `/api/sessions/${encodeURIComponent(name)}/map?` + Date.now();
       document.getElementById('map-frame').src = mapSrc;
 
-      // Load readings for this session
       const url = name === null ? '/api/readings' : `/api/sessions/${encodeURIComponent(name)}/readings`;
       const res = await fetch(url);
       const data = await res.json();
+      lastReadings = data;
 
       document.getElementById('viewing-label').textContent = name || '';
       renderReadings(data);
-      renderSessionList(); // refresh highlight
+      renderSessionList();
     }
 
     function renderReadings(data) {
@@ -407,12 +555,15 @@
         list.innerHTML = '<div id="empty-state">No messages yet</div>';
         return;
       }
-      // Show newest first; originalIndex is the 0-based index in the data array
-      const reversed = [...data].reverse();
-      list.innerHTML = reversed.map((r, i) => {
-        const originalIndex = data.length - 1 - i;
-        return buildCard(r, data.length - i, originalIndex);
-      }).join('');
+      if (tableView) {
+        list.innerHTML = buildTable(data);
+      } else {
+        const reversed = [...data].reverse();
+        list.innerHTML = reversed.map((r, i) => {
+          const originalIndex = data.length - 1 - i;
+          return buildCard(r, data.length - i, originalIndex);
+        }).join('');
+      }
     }
 
     // ---- Delete session ----
@@ -464,7 +615,7 @@
       document.getElementById('new-session-form').classList.remove('open');
       document.getElementById('session-name-input').value = '';
       document.getElementById('form-error').style.display = 'none';
-      viewingSession = null; // switch back to live view
+      viewingSession = null;
       refreshSidebar();
       refreshMap();
     }
@@ -483,6 +634,7 @@
       if (viewingSession === null) {
         const res = await fetch('/api/readings');
         const data = await res.json();
+        lastReadings = data;
         renderReadings(data);
       }
     }

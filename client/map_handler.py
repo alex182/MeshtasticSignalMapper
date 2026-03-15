@@ -13,9 +13,6 @@ _SNR_OK = 3
 
 DEFAULT_CENTER = (39.0594, -94.8827)  # Bonner Springs, KS
 
-TILES_LIGHT = "OpenStreetMap"
-TILES_DARK  = "CartoDB dark_matter"
-
 
 def _snr_color(snr: float) -> str:
     if snr >= _SNR_GOOD:
@@ -23,6 +20,10 @@ def _snr_color(snr: float) -> str:
     if snr >= _SNR_OK:
         return "orange"
     return "red"
+
+
+TILES_LIGHT = "OpenStreetMap"
+TILES_DARK  = "CartoDB dark_matter"
 
 
 def render_points_to_file(points: list[dict], output_path: str, tiles: str = TILES_LIGHT) -> None:
@@ -116,6 +117,11 @@ class MapHandler:
         self._lock = threading.Lock()
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
+    def set_tiles(self, tiles: str) -> None:
+        with self._lock:
+            self._tiles = tiles
+            render_points_to_file(self._points, self.output_path, self._tiles)
+
     def add_point(
         self,
         lat: float,
@@ -136,11 +142,6 @@ class MapHandler:
                     "timestamp": timestamp,
                 }
             )
-            render_points_to_file(self._points, self.output_path, self._tiles)
-
-    def set_tiles(self, tiles: str) -> None:
-        with self._lock:
-            self._tiles = tiles
             render_points_to_file(self._points, self.output_path, self._tiles)
 
     def load_points(self, points: list[dict]) -> None:

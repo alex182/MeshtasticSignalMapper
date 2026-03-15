@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     devices:
       # Adjust to match your actual USB serial device
-      - /dev/ttyACM1:/dev/ttyACM1
+      - /dev/ttyACM0:/dev/ttyACM1
     environment:
       MESHTASTIC_PORT: /dev/ttyACM1
       WEB_PORT: "5000"
