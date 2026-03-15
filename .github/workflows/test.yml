@@ -17,7 +17,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install folium flask pytest
+        run: pip install folium flask pytest pynmea2 pyserial
 
       - name: Run tests
         run: python3 -m pytest tests/ -v
