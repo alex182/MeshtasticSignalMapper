@@ -463,6 +463,8 @@
             <span class="stat-value">${msg.lat.toFixed(5)}</span>
             <span class="stat-label">Lon</span>
             <span class="stat-value">${msg.lon.toFixed(5)}</span>
+            <span class="stat-label">Elevation</span>
+            <span class="stat-value">${(msg.elevation * 3.28084).toFixed(0)} ft</span>
             ${signalHtml}
             <span class="stat-label">Status</span>
             <span class="stat-value">${statusHtml}</span>

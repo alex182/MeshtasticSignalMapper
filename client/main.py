@@ -126,6 +126,7 @@ def send_location() -> str | None:
             "seq": seq,
             "lat": reading.lat,
             "lon": reading.lon,
+            "elevation": reading.elevation,
             "timestamp": reading.timestamp,
             "sentAt": time.time(),
             "status": "pending",
