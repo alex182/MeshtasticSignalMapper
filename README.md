@@ -4,8 +4,8 @@ Maps RF signal strength (SNR/RSSI) from a moving Meshtastic node onto an OpenStr
 
 ## How It Works
 
-- **Client** (car / Raspberry Pi): reads GPS coordinates and broadcasts them every N seconds as a JSON text message over Meshtastic
-- **Server** (base station): receives the packets, extracts GPS + SNR/RSSI/hop metadata, plots points on a Folium/Leaflet map, serves a Flask web UI, and sends an ACK back to the client
+- **Client** (car / Raspberry Pi): reads GPS coordinates and broadcasts them every N seconds as a JSON text message over Meshtastic. Receives ACKs from the server containing SNR/RSSI, tracking round-trip time per message.
+- **Server** (base station): receives the packets, extracts GPS + SNR/RSSI/hop metadata, plots points on a Folium/Leaflet map, serves a Flask web UI, and sends an ACK back to the client.
 
 Both sides run in Alpine-based Docker containers with their Meshtastic boards connected via USB.
 
@@ -19,6 +19,7 @@ Both sides run in Alpine-based Docker containers with their Meshtastic boards co
         |  {lat, lon, messageId, ts}         +-> sessions/*.json
         +---------------------------------->
         <-- ACK {messageId, snr, rssi} -----
+        Flask :5002 (client web UI)
 ```
 
 ## Project Structure
@@ -29,7 +30,8 @@ MeshtasticSignalMapper/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── docker-compose.yml        # deploy on car machine
-│   ├── main.py                   # GPS sender + ACK handler
+│   ├── main.py                   # GPS sender + ACK handler + Flask web UI
+│   ├── map_handler.py            # Folium map rendering (thread-safe)
 │   └── gps_mock.py               # simulated GPS (replace with real hardware)
 ├── server/
 │   ├── Dockerfile
@@ -39,18 +41,39 @@ MeshtasticSignalMapper/
 │   ├── map_handler.py            # Folium map rendering (thread-safe)
 │   └── templates/
 │       └── index.html            # web UI
+├── tests/
+│   ├── client/
+│   │   └── test_main.py
+│   └── server/
+│       ├── test_main.py
+│       └── test_map_handler.py
 └── docker-compose.dev.yml        # both services on one machine (two USB boards)
 ```
 
 ## Web UI Features
 
-- Live map with colour-coded pins: green (SNR >= 7 dB), orange (>= 3 dB), red (< 3 dB)
+Both the client and server have a web UI with a shared layout: header with role badge, collapsible/expandable sidebar, and a live Folium map.
+
+### Server (`http://<server-ip>:5000`)
+
+- Live map with colour-coded pins: green (SNR ≥ 7 dB), orange (≥ 3 dB), red (< 3 dB)
 - Route polyline connecting all points in order
-- Sidebar listing all received messages with SNR, RSSI, hops, coordinates, and timestamp
-- Click a message in the sidebar to pan the map to its pin and open its popup
-- Named sessions: save each drive as a named session, browse and reload historical sessions
-- Delete saved sessions from the UI
-- Independent auto-refresh controls for the messages sidebar and the map (Off / 5s / 10s / 30s / 60s), plus manual refresh buttons
+- Sidebar with all received messages: SNR, RSSI, hop count, coordinates, timestamp
+- Click a message to pan the map to its pin and open the popup
+- Named sessions: save each drive, browse and reload historical sessions, delete old sessions
+- Table view toggle for compact message listing
+- Dark/Light map tile toggle (OpenStreetMap ↔ CartoDB Dark Matter)
+- Independent auto-refresh controls for sidebar and map (Off / 5s / 10s / 30s / 60s)
+
+### Client (`http://<client-ip>:5002`)
+
+- Live map with the same colour-coded pins and route polyline
+- Sidebar showing all sent messages with status (Pending / ACKed), SNR, RSSI, sent time, ACK time, and round-trip time
+- Filter messages by ACKed or Pending status
+- Table view toggle for compact message listing
+- Target node selector: dropdown of live mesh peers — leave blank to auto-scan until a node appears
+- Dark/Light map tile toggle
+- Sidebar collapse and full-width expand
 
 ## Message Formats
 
@@ -64,33 +87,35 @@ MeshtasticSignalMapper/
 {"messageId": "<uuid4>", "snr": 6.25, "rssi": -90, "ack": true}
 ```
 
-SNR and RSSI are extracted from the Meshtastic packet metadata (`rxSnr` / `rxRssi`), not from the message body. Hop count is derived from `hopStart - hopLimit`.
+SNR and RSSI are extracted from Meshtastic packet metadata (`rxSnr` / `rxRssi`), not from the message body. Hop count is derived from `hopStart - hopLimit`.
 
 ## Deployment
 
 ### Base Station (Server)
 
 1. Connect your Meshtastic board via USB and confirm the device path (e.g. `ls /dev/ttyACM*`)
-2. Edit `server/docker-compose.yml` — update the `devices:` path and `MESHTASTIC_PORT` to match
-3. Optionally set `SERVER_NODE_ID` in `client/docker-compose.yml` to the server's node ID (run `meshtastic --info` to find it)
+2. Edit `server/docker-compose.yml` — update the `devices:` path and `MESHTASTIC_PORT`
 
 ```bash
 cd server
 docker compose up -d
 ```
 
-Open `http://<server-ip>:5001` in a browser.
+Open `http://<server-ip>:5000` in a browser.
 
 ### Client (Car / Raspberry Pi)
 
 1. Connect the Meshtastic board via USB
-2. Edit `client/docker-compose.yml` — update the `devices:` path, `MESHTASTIC_PORT`, and `SERVER_NODE_ID`
-3. Adjust `GPS_START_LAT` / `GPS_START_LON` for the mock GPS starting location (or replace `gps_mock.py` with real hardware reads)
+2. Edit `client/docker-compose.yml` — update the `devices:` path and `MESHTASTIC_PORT`
+3. Set `SERVER_NODE_ID` to the server's node ID (run `meshtastic --info`), or leave it empty (`""`) to auto-scan for nodes from the web UI
+4. Adjust `GPS_START_LAT` / `GPS_START_LON` for the mock GPS starting location
 
 ```bash
 cd client
 docker compose up -d
 ```
+
+Open `http://<client-ip>:5002` in a browser. If `SERVER_NODE_ID` is blank, the target node dropdown will auto-scan and populate as nodes are discovered on the mesh.
 
 ### Development (Both Services on One Machine)
 
@@ -99,8 +124,6 @@ Requires two Meshtastic boards on `/dev/ttyUSB0` (client) and `/dev/ttyUSB1` (se
 ```bash
 docker compose -f docker-compose.dev.yml up -d
 ```
-
-Web UI available at `http://localhost:5000`.
 
 ## Environment Variables
 
@@ -112,7 +135,8 @@ Web UI available at `http://localhost:5000`.
 | `SEND_INTERVAL` | `10` | Seconds between GPS broadcasts |
 | `GPS_START_LAT` | `37.7749` | Mock GPS starting latitude |
 | `GPS_START_LON` | `-122.4194` | Mock GPS starting longitude |
-| `SERVER_NODE_ID` | *(broadcast)* | Meshtastic node ID of the server (e.g. `!a6961690`) |
+| `SERVER_NODE_ID` | *(broadcast)* | Meshtastic node ID of the server (e.g. `!a6961690`). Leave empty to auto-scan from the UI. |
+| `WEB_PORT` | `5002` | Flask listen port for the client web UI |
 
 ### Server
 
@@ -127,11 +151,19 @@ Web UI available at `http://localhost:5000`.
 
 `client/gps_mock.py` simulates a GPS hat with slow eastward drift. To use real hardware, replace the `GPSMock.get_reading()` implementation with reads from your GPS device (e.g. via `gpsd` or direct serial NMEA parsing).
 
+## Testing
+
+```bash
+python3 -m pytest tests/ -v
+```
+
+Tests cover Meshtastic packet handling, ACK flow, session management, Flask routes, map rendering, and thread safety. Heavy dependencies (meshtastic, pubsub) are stubbed at the module level so no hardware is required.
+
 ## Dependencies
 
 | Side | Packages |
 |---|---|
-| Client | `meshtastic >= 2.3.0`, `pyserial >= 3.5` |
-| Server | `meshtastic >= 2.3.0`, `pyserial >= 3.5`, `folium >= 0.14.0`, `flask >= 3.0.0` |
+| Client | `meshtastic >= 2.3.0`, `pyserial >= 3.5`, `flask >= 3.0`, `folium >= 0.14` |
+| Server | `meshtastic >= 2.3.0`, `pyserial >= 3.5`, `flask >= 3.0`, `folium >= 0.14` |
 
 Both run on `python:3.12-alpine`.

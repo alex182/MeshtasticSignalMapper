@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Meshtastic Signal Mapper — Client</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    header {
+      padding: 0.65rem 1rem;
+      background: #16213e;
+      border-bottom: 1px solid #0f3460;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 1rem; letter-spacing: 0.05em; }
+    .role-badge {
+      font-size: 0.72rem;
+      background: #1a3a5c;
+      color: #63b3ed;
+      border: 1px solid #2b6cb0;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    #gps-badge {
+      font-size: 0.75rem;
+      background: #0f3460;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      color: #90cdf4;
+      max-width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-left: auto;
+    }
+    #refresh-control { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: #718096; }
+    #refresh-control select {
+      background: #0f3460;
+      color: #90cdf4;
+      border: none;
+      border-radius: 4px;
+      padding: 0.2rem 0.4rem;
+      font-size: 0.72rem;
+      cursor: pointer;
+    }
+    #btn-refresh-messages {
+      background: none;
+      color: #a0aec0;
+      border: none;
+      padding: 0;
+      font-size: 0.85rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+    #btn-refresh-messages:hover { color: #90cdf4; }
+    #btn-refresh-map, #btn-map-style {
+      background: #0f3460;
+      color: #90cdf4;
+      border: none;
+      border-radius: 4px;
+      padding: 0.2rem 0.5rem;
+      font-size: 0.72rem;
+      cursor: pointer;
+    }
+    #btn-refresh-map:hover, #btn-map-style:hover { background: #1a4a7a; }
+    #btn-map-style.dark { background: #1a1a2e; color: #90cdf4; border: 1px solid #0f3460; }
+
+    .main { display: flex; flex: 1; overflow: hidden; }
+
+    /* ---- Sidebar ---- */
+    #sidebar {
+      width: 300px;
+      flex-shrink: 0;
+      background: #16213e;
+      border-right: 1px solid #0f3460;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: width 0.2s ease;
+    }
+    #sidebar.collapsed { width: 0; border-right: none; }
+    #sidebar.maximized { flex: 1; width: auto; border-right: none; }
+
+    #sidebar-toggle {
+      width: 12px;
+      flex-shrink: 0;
+      background: #0f3460;
+      border: none;
+      border-right: 1px solid #16213e;
+      color: #4a6080;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.6rem;
+      padding: 0;
+      transition: color 0.15s;
+    }
+    #sidebar-toggle:hover { background: #1a4a7a; color: #90cdf4; }
+
+    /* Stats row */
+    #stats-panel {
+      border-bottom: 1px solid #0f3460;
+      padding: 0.6rem 0.75rem;
+      display: flex;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
+    .stat-chip {
+      flex: 1;
+      background: #1a1a2e;
+      border: 1px solid #0f3460;
+      border-radius: 6px;
+      padding: 0.4rem 0.5rem;
+      text-align: center;
+    }
+    .stat-chip .chip-value { font-size: 1.1rem; font-weight: 700; color: #90cdf4; }
+    .stat-chip .chip-label { font-size: 0.65rem; color: #718096; text-transform: uppercase; letter-spacing: 0.07em; }
+    .chip-value.acked { color: #68d391; }
+    .chip-value.pending { color: #f6ad55; }
+
+    /* Node selector */
+    #node-panel {
+      border-bottom: 1px solid #0f3460;
+      flex-shrink: 0;
+    }
+    #node-panel-header {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #a0aec0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    #node-row {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0 0.75rem 0.5rem;
+    }
+    #node-select {
+      flex: 1;
+      background: #1a1a2e;
+      border: 1px solid #0f3460;
+      color: #eee;
+      border-radius: 4px;
+      padding: 0.3rem 0.4rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      min-width: 0;
+    }
+    #node-select:focus { outline: none; border-color: #4a90d9; }
+    #btn-refresh-nodes {
+      background: none;
+      color: #a0aec0;
+      border: none;
+      padding: 0;
+      font-size: 0.85rem;
+      cursor: pointer;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    #btn-refresh-nodes:hover { color: #90cdf4; }
+
+    /* Messages section */
+    #messages-section {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      overflow: hidden;
+    }
+    #messages-header {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #a0aec0;
+      border-bottom: 1px solid #0f3460;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    #messages-header .header-right {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      margin-left: auto;
+    }
+    #refresh-messages {
+      background: #0f3460;
+      color: #90cdf4;
+      border: none;
+      border-radius: 4px;
+      padding: 0.15rem 0.3rem;
+      font-size: 0.68rem;
+      cursor: pointer;
+    }
+    #messages-list { overflow-y: auto; flex: 1; }
+    #messages-list::-webkit-scrollbar { width: 6px; }
+    #messages-list::-webkit-scrollbar-track { background: #16213e; }
+    #messages-list::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
+
+    /* Table view */
+    #msg-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
+    #msg-table thead th {
+      position: sticky;
+      top: 0;
+      background: #16213e;
+      color: #718096;
+      font-weight: 600;
+      text-align: left;
+      padding: 0.3rem 0.4rem;
+      border-bottom: 1px solid #0f3460;
+      white-space: nowrap;
+    }
+    #msg-table tbody tr {
+      border-bottom: 1px solid #0f3460;
+      cursor: pointer;
+    }
+    #msg-table tbody tr:hover { background: #1e2d50; }
+    #msg-table tbody tr.highlighted { background: #1a3a5c; outline: 1px solid #4a90d9; }
+    #msg-table td { padding: 0.3rem 0.4rem; white-space: nowrap; }
+    #msg-table td.td-seq { color: #90cdf4; font-weight: 700; }
+    #msg-table td.td-status { text-align: center; }
+
+    #btn-view-toggle, #btn-maximize-sidebar {
+      background: #0f3460;
+      color: #718096;
+      border: none;
+      border-radius: 4px;
+      padding: 0.15rem 0.45rem;
+      font-size: 0.68rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #btn-view-toggle.active, #btn-maximize-sidebar.active { background: #2b6cb0; color: #fff; }
+
+    /* Message cards */
+    .msg-card {
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid #0f3460;
+      font-size: 0.78rem;
+      line-height: 1.6;
+      cursor: pointer;
+    }
+    .msg-card:hover { background: #1e2d50; }
+    .msg-card.highlighted { background: #1a3a5c; outline: 1px solid #4a90d9; }
+    .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
+    .seq { font-weight: 700; color: #90cdf4; }
+    .ts { color: #718096; font-size: 0.7rem; }
+    .card-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.15rem 0.5rem; }
+    .stat-label { color: #a0aec0; }
+    .stat-value { font-weight: 600; }
+    .snr-good { color: #68d391; }
+    .snr-ok   { color: #f6ad55; }
+    .snr-bad  { color: #fc8181; }
+    .status-pending { color: #718096; font-style: italic; }
+    .status-acked   { color: #68d391; font-size: 0.72rem; }
+
+    .btn-filter {
+      background: #0f3460;
+      color: #718096;
+      border: none;
+      border-radius: 4px;
+      padding: 0.15rem 0.45rem;
+      font-size: 0.68rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-filter.active { background: #2b6cb0; color: #fff; }
+
+    #empty-state { padding: 1.5rem 0.75rem; color: #4a5568; font-size: 0.8rem; text-align: center; }
+
+    /* Map */
+    #map-frame { flex: 1; border: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Meshtastic Signal Mapper</h1>
+    <span class="role-badge">CLIENT</span>
+    <div id="refresh-control">
+      Map:
+      <button id="btn-map-style" title="Switch to dark map">Dark</button>
+      <button id="btn-refresh-map" title="Refresh now">↺</button>
+      <select id="refresh-map">
+        <option value="0">Off</option>
+        <option value="5000">5s</option>
+        <option value="10000" selected>10s</option>
+        <option value="30000">30s</option>
+        <option value="60000">60s</option>
+      </select>
+    </div>
+    <span id="gps-badge">No fix yet</span>
+  </header>
+
+  <div class="main">
+    <aside id="sidebar">
+
+      <!-- Stats chips -->
+      <div id="stats-panel">
+        <div class="stat-chip">
+          <div class="chip-value" id="stat-total">—</div>
+          <div class="chip-label">Sent</div>
+        </div>
+        <div class="stat-chip">
+          <div class="chip-value acked" id="stat-acked">—</div>
+          <div class="chip-label">ACKed</div>
+        </div>
+        <div class="stat-chip">
+          <div class="chip-value pending" id="stat-pending">—</div>
+          <div class="chip-label">Pending</div>
+        </div>
+      </div>
+
+      <!-- Node selector -->
+      <div id="node-panel">
+        <div id="node-panel-header">
+          Target Node
+          <button id="btn-refresh-nodes" title="Refresh node list">↺</button>
+        </div>
+        <div id="node-row">
+          <select id="node-select">
+            <option value="">Broadcast (no target)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Messages panel -->
+      <div id="messages-section">
+        <div id="messages-header">
+          Messages
+          <div class="header-right">
+            <button id="btn-filter-acked" class="btn-filter" title="Show ACKed only">ACKed</button>
+            <button id="btn-filter-pending" class="btn-filter" title="Show un-ACKed only">Pending</button>
+            <button id="btn-view-toggle" title="Toggle table view">Table</button>
+            <button id="btn-maximize-sidebar" title="Expand to full width">⤢</button>
+            <button id="btn-refresh-messages" title="Refresh messages">↺</button>
+            <select id="refresh-messages">
+              <option value="0">Off</option>
+              <option value="5000">5s</option>
+              <option value="10000" selected>10s</option>
+              <option value="30000">30s</option>
+              <option value="60000">60s</option>
+            </select>
+          </div>
+        </div>
+        <div id="messages-list">
+          <div id="empty-state">No messages sent yet</div>
+        </div>
+      </div>
+
+    </aside>
+
+    <button id="sidebar-toggle" title="Toggle sidebar">&#x276E;</button>
+    <iframe id="map-frame" src="/map"></iframe>
+  </div>
+
+  <script>
+    // ---- Utilities ----
+
+    function snrClass(snr) {
+      if (snr >= 7) return 'snr-good';
+      if (snr >= 3) return 'snr-ok';
+      return 'snr-bad';
+    }
+
+    function formatTime(iso) {
+      try { return new Date(iso).toLocaleTimeString(); } catch (_) { return iso; }
+    }
+
+    function highlightMarker(originalIndex) {
+      document.querySelectorAll('.msg-card').forEach(el => el.classList.remove('highlighted'));
+      const card = document.querySelector(`.msg-card[data-index="${originalIndex}"]`);
+      if (card) card.classList.add('highlighted');
+      const iframe = document.getElementById('map-frame');
+      iframe.contentWindow.postMessage({ type: 'highlight', index: originalIndex }, '*');
+    }
+
+    function buildCard(msg, originalIndex) {
+      const isPending = msg.status === 'pending';
+      const statusHtml = isPending
+        ? `<span class="status-pending">⋯ Pending</span>`
+        : `<span class="status-acked">✓ ACKed</span>`;
+
+      const signalHtml = isPending
+        ? `<span class="stat-label">SNR</span><span class="stat-value status-pending">—</span>
+           <span class="stat-label">RSSI</span><span class="stat-value status-pending">—</span>
+           <span class="stat-label">Sent at</span><span class="stat-value">${formatTime(msg.timestamp)}</span>
+           <span class="stat-label">ACK at</span><span class="stat-value status-pending">—</span>
+           <span class="stat-label">RTT</span><span class="stat-value status-pending">—</span>`
+        : `<span class="stat-label">SNR</span><span class="stat-value ${snrClass(msg.snr)}">${msg.snr} dB</span>
+           <span class="stat-label">RSSI</span><span class="stat-value">${msg.rssi} dBm</span>
+           <span class="stat-label">Sent at</span><span class="stat-value">${formatTime(msg.timestamp)}</span>
+           <span class="stat-label">ACK at</span><span class="stat-value">${formatTime(msg.ackTime)}</span>
+           <span class="stat-label">RTT</span><span class="stat-value">${msg.rttMs} s</span>`;
+
+      return `
+        <div class="msg-card" data-index="${originalIndex}" onclick="highlightMarker(${originalIndex})">
+          <div class="card-top">
+            <span class="seq">#${msg.seq}</span>
+            <span class="ts">${formatTime(msg.timestamp)}</span>
+          </div>
+          <div class="card-stats">
+            <span class="stat-label">Lat</span>
+            <span class="stat-value">${msg.lat.toFixed(5)}</span>
+            <span class="stat-label">Lon</span>
+            <span class="stat-value">${msg.lon.toFixed(5)}</span>
+            ${signalHtml}
+            <span class="stat-label">Status</span>
+            <span class="stat-value">${statusHtml}</span>
+          </div>
+        </div>`;
+    }
+
+    // ---- Sidebar maximize ----
+
+    document.getElementById('btn-maximize-sidebar').addEventListener('click', function() {
+      const sidebar = document.getElementById('sidebar');
+      const maximized = sidebar.classList.toggle('maximized');
+      document.getElementById('sidebar-toggle').style.display = maximized ? 'none' : '';
+      document.getElementById('map-frame').style.display = maximized ? 'none' : '';
+      this.classList.toggle('active', maximized);
+      this.innerHTML = maximized ? '⤡' : '⤢';
+      this.title = maximized ? 'Restore' : 'Expand to full width';
+    });
+
+    // ---- Sidebar toggle ----
+
+    document.getElementById('sidebar-toggle').addEventListener('click', function() {
+      const sidebar = document.getElementById('sidebar');
+      const collapsed = sidebar.classList.toggle('collapsed');
+      this.innerHTML = collapsed ? '&#x276F;' : '&#x276E;';
+      this.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    });
+
+    // ---- Node selector ----
+
+    let _nodesScanTimer = null;
+
+    async function loadNodes() {
+      const [nodesRes, configRes] = await Promise.all([
+        fetch('/api/nodes'),
+        fetch('/api/config'),
+      ]);
+      const nodes = await nodesRes.json();
+      const config = await configRes.json();
+
+      const sel = document.getElementById('node-select');
+      const current = config.serverNodeId || '';
+      sel.innerHTML = `<option value="">Broadcast (no target)</option>` +
+        nodes.map(n =>
+          `<option value="${n.nodeId}" ${n.nodeId === current ? 'selected' : ''}>
+            ${n.longName} (${n.nodeId})
+          </option>`
+        ).join('');
+
+      // Auto-scan: keep polling until a target is configured or nodes are found
+      if (!current) {
+        if (nodes.length > 0) {
+          // Nodes visible but none selected — slow down to occasional refresh
+          _scheduleNodesScan(30000);
+        } else {
+          // No nodes yet — poll quickly
+          _scheduleNodesScan(5000);
+        }
+      } else {
+        // Target configured — stop scanning
+        _stopNodesScan();
+      }
+    }
+
+    function _scheduleNodesScan(ms) {
+      _stopNodesScan();
+      _nodesScanTimer = setTimeout(loadNodes, ms);
+    }
+
+    function _stopNodesScan() {
+      if (_nodesScanTimer) { clearTimeout(_nodesScanTimer); _nodesScanTimer = null; }
+    }
+
+    document.getElementById('node-select').addEventListener('change', async function() {
+      await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serverNodeId: this.value || null }),
+      });
+      // If user cleared the selection, resume scanning
+      if (!this.value) _scheduleNodesScan(5000);
+      else _stopNodesScan();
+    });
+
+    document.getElementById('btn-refresh-nodes').addEventListener('click', loadNodes);
+
+    // ---- View toggle ----
+
+    let tableView = false;
+
+    document.getElementById('btn-view-toggle').addEventListener('click', function() {
+      tableView = !tableView;
+      this.classList.toggle('active', tableView);
+      if (lastMessages) renderMessageList(lastMessages);
+    });
+
+    function buildTable(visible, allMessages) {
+      if (visible.length === 0) return '';
+      const rows = [...visible].reverse().map(m => {
+        const originalIndex = allMessages.indexOf(m);
+        const isPending = m.status === 'pending';
+        const snr  = isPending ? '—' : `<span class="${snrClass(m.snr)}">${m.snr}</span>`;
+        const rssi = isPending ? '—' : m.rssi;
+        const rtt  = isPending ? '—' : `${m.rttMs}s`;
+        const status = isPending
+          ? `<span class="status-pending">⋯</span>`
+          : `<span class="status-acked">✓</span>`;
+        return `<tr onclick="highlightMarker(${originalIndex})">
+          <td class="td-seq">${m.seq}</td>
+          <td>${formatTime(m.timestamp)}</td>
+          <td>${m.lat.toFixed(4)}</td>
+          <td>${m.lon.toFixed(4)}</td>
+          <td>${snr}</td>
+          <td>${rssi}</td>
+          <td>${rtt}</td>
+          <td class="td-status">${status}</td>
+        </tr>`;
+      }).join('');
+      return `<table id="msg-table">
+        <thead><tr>
+          <th>#</th><th>Sent</th><th>Lat</th><th>Lon</th>
+          <th>SNR</th><th>RSSI</th><th>RTT</th><th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+
+    // ---- Filter state ----
+
+    // 'all' | 'acked' | 'pending'
+    let activeFilter = 'all';
+
+    function setFilter(filter) {
+      activeFilter = activeFilter === filter ? 'all' : filter;
+      document.getElementById('btn-filter-acked').classList.toggle('active', activeFilter === 'acked');
+      document.getElementById('btn-filter-pending').classList.toggle('active', activeFilter === 'pending');
+      if (lastMessages) renderMessageList(lastMessages);
+    }
+
+    document.getElementById('btn-filter-acked').addEventListener('click', () => setFilter('acked'));
+    document.getElementById('btn-filter-pending').addEventListener('click', () => setFilter('pending'));
+
+    // ---- Data fetching ----
+
+    let lastMessages = null;
+
+    function renderMessageList(messages) {
+      const list = document.getElementById('messages-list');
+      const visible = activeFilter === 'acked'   ? messages.filter(m => m.status === 'acked')
+                    : activeFilter === 'pending' ? messages.filter(m => m.status === 'pending')
+                    : messages;
+      if (visible.length === 0) {
+        const emptyText = activeFilter === 'acked'   ? 'No ACKed messages yet'
+                        : activeFilter === 'pending' ? 'No pending messages'
+                        : 'No messages sent yet';
+        list.innerHTML = `<div id="empty-state">${emptyText}</div>`;
+        return;
+      }
+      if (tableView) {
+        list.innerHTML = buildTable(visible, messages);
+      } else {
+        const reversed = [...visible].reverse();
+        list.innerHTML = reversed.map(m => {
+          const originalIndex = messages.indexOf(m);
+          return buildCard(m, originalIndex);
+        }).join('');
+      }
+    }
+
+    async function refreshMessages() {
+      const [msgsRes, statusRes] = await Promise.all([
+        fetch('/api/messages'),
+        fetch('/api/status'),
+      ]);
+      const messages = await msgsRes.json();
+      const status = await statusRes.json();
+      lastMessages = messages;
+
+      // Update stats chips
+      document.getElementById('stat-total').textContent = status.total;
+      document.getElementById('stat-acked').textContent = status.acked;
+      document.getElementById('stat-pending').textContent = status.total - status.acked;
+
+      // Update GPS badge
+      if (status.last_lat !== null) {
+        document.getElementById('gps-badge').textContent =
+          `${status.last_lat.toFixed(5)}, ${status.last_lon.toFixed(5)}`;
+      }
+
+      renderMessageList(messages);
+    }
+
+    function refreshMap() {
+      document.getElementById('map-frame').src = '/map?' + Date.now();
+    }
+
+    // ---- Refresh timers ----
+
+    let messagesTimer = null;
+    let mapTimer = null;
+
+    function startMessagesTimer(ms) {
+      if (messagesTimer) clearInterval(messagesTimer);
+      messagesTimer = ms > 0 ? setInterval(refreshMessages, ms) : null;
+    }
+
+    function startMapTimer(ms) {
+      if (mapTimer) clearInterval(mapTimer);
+      mapTimer = ms > 0 ? setInterval(refreshMap, ms) : null;
+    }
+
+    // ---- Map style toggle ----
+
+    let darkMap = false;
+
+    document.getElementById('btn-map-style').addEventListener('click', async function() {
+      darkMap = !darkMap;
+      this.classList.toggle('dark', darkMap);
+      this.textContent = darkMap ? 'Light' : 'Dark';
+      this.title = darkMap ? 'Switch to light map' : 'Switch to dark map';
+      await fetch('/api/map-style', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dark: darkMap }),
+      });
+      refreshMap();
+    });
+
+    document.getElementById('btn-refresh-messages').addEventListener('click', refreshMessages);
+    document.getElementById('btn-refresh-map').addEventListener('click', refreshMap);
+
+    document.getElementById('refresh-messages').addEventListener('change', function() {
+      startMessagesTimer(parseInt(this.value, 10));
+    });
+    document.getElementById('refresh-map').addEventListener('change', function() {
+      startMapTimer(parseInt(this.value, 10));
+    });
+
+    // ---- Init ----
+    loadNodes();
+    refreshMessages();
+    startMessagesTimer(10000);
+    startMapTimer(10000);
+  </script>
+</body>
+</html>

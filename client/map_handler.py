@@ -13,9 +13,6 @@ _SNR_OK = 3
 
 DEFAULT_CENTER = (39.0594, -94.8827)  # Bonner Springs, KS
 
-TILES_LIGHT = "OpenStreetMap"
-TILES_DARK  = "CartoDB dark_matter"
-
 
 def _snr_color(snr: float) -> str:
     if snr >= _SNR_GOOD:
@@ -23,6 +20,10 @@ def _snr_color(snr: float) -> str:
     if snr >= _SNR_OK:
         return "orange"
     return "red"
+
+
+TILES_LIGHT = "OpenStreetMap"
+TILES_DARK  = "CartoDB dark_matter"
 
 
 def render_points_to_file(points: list[dict], output_path: str, tiles: str = TILES_LIGHT) -> None:
@@ -34,7 +35,7 @@ def render_points_to_file(points: list[dict], output_path: str, tiles: str = TIL
     else:
         center = DEFAULT_CENTER
 
-    m = folium.Map(location=center, zoom_start=14, tiles="Cartodb dark_matter")
+    m = folium.Map(location=center, zoom_start=14, tiles=tiles)
 
     if points:
         coords = [(p["lat"], p["lon"]) for p in points]
@@ -58,7 +59,6 @@ def render_points_to_file(points: list[dict], output_path: str, tiles: str = TIL
                 f"SNR: {pt['snr']} dB<br>"
                 f"RSSI: {pt['rssi']} dBm<br>"
                 f"Time: {pt['timestamp']}<br>"
-                f"Elevation: {pt['elevation']} m<br>"
                 f"ID: {msg_id[:8]}…"
             )
             tooltip_text = f"#{idx + 1} | SNR: {pt['snr']} dB | RSSI: {pt['rssi']} dBm"
@@ -117,13 +117,17 @@ class MapHandler:
         self._lock = threading.Lock()
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
+    def set_tiles(self, tiles: str) -> None:
+        with self._lock:
+            self._tiles = tiles
+            render_points_to_file(self._points, self.output_path, self._tiles)
+
     def add_point(
         self,
         lat: float,
         lon: float,
         snr: float,
         rssi: int,
-        elevation: float,   
         message_id: str,
         timestamp: str,
     ) -> None:
@@ -134,16 +138,10 @@ class MapHandler:
                     "lon": lon,
                     "snr": snr,
                     "rssi": rssi,
-                    "elevation": elevation,
                     "message_id": message_id,
                     "timestamp": timestamp,
                 }
             )
-            render_points_to_file(self._points, self.output_path, self._tiles)
-
-    def set_tiles(self, tiles: str) -> None:
-        with self._lock:
-            self._tiles = tiles
             render_points_to_file(self._points, self.output_path, self._tiles)
 
     def load_points(self, points: list[dict]) -> None:

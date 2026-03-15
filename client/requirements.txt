@@ -1,2 +1,4 @@
 meshtastic>=2.3.0
 pyserial>=3.5
+flask>=3.0
+folium>=0.14

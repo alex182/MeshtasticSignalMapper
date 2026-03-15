@@ -23,6 +23,14 @@ pub_mock = MagicMock()
 pubsub_mod.pub = pub_mock
 sys.modules.setdefault("pubsub", pubsub_mod)
 
+# map_handler (client-local import)
+map_handler_mod = types.ModuleType("map_handler")
+map_handler_mod.MapHandler = MagicMock()
+map_handler_mod.render_points_to_file = MagicMock()
+map_handler_mod.TILES_LIGHT = "OpenStreetMap"
+map_handler_mod.TILES_DARK = "CartoDB dark_matter"
+sys.modules.setdefault("map_handler", map_handler_mod)
+
 # gps_mock (client-local import)
 gps_mock_mod = types.ModuleType("gps_mock")
 
@@ -92,6 +100,11 @@ class TestSendLocation(unittest.TestCase):
     def setUp(self):
         self.mock_interface = MagicMock()
         main_module.interface = self.mock_interface
+        self._original_node = main_module.SERVER_NODE_ID
+        main_module.SERVER_NODE_ID = "!testnode"
+
+    def tearDown(self):
+        main_module.SERVER_NODE_ID = self._original_node
 
     def test_returns_string_uuid(self):
         import uuid
