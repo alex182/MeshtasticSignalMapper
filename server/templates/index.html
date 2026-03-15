@@ -426,7 +426,7 @@
             <span class="stat-label">Lon</span>
             <span class="stat-value">${reading.lon.toFixed(5)}</span>
             <span class="stat-label">Elevation</span>
-            <span class="stat-value">${reading.elevation.toFixed(1)} ft</span>
+            <span class="stat-value">${(reading.elevation * 3.28084).toFixed(0)} ft</span>
             <span class="stat-label">Hops</span>
             <span class="stat-value">${reading.hopsAway ?? '—'}</span>
             <span class="stat-label">ID</span>
@@ -439,21 +439,25 @@
       if (data.length === 0) return '';
       const rows = [...data].reverse().map((r, i) => {
         const originalIndex = data.length - 1 - i;
-        const cls = snrClass(r.snr);
+        const cls  = snrClass(r.snr);
+        const elev = (r.elevation * 3.28084).toFixed(0);
+        const id   = r.messageId.slice(0, 8) + '…';
         return `<tr onclick="highlightMarker(${originalIndex})">
           <td class="td-seq">${data.length - i}</td>
           <td>${formatTime(r.timestamp)}</td>
           <td>${r.lat.toFixed(4)}</td>
           <td>${r.lon.toFixed(4)}</td>
+          <td>${elev}</td>
           <td><span class="${cls}">${r.snr}</span></td>
           <td>${r.rssi}</td>
           <td>${r.hopsAway ?? '—'}</td>
+          <td style="color:#718096">${id}</td>
         </tr>`;
       }).join('');
       return `<table id="msg-table">
         <thead><tr>
           <th>#</th><th>Time</th><th>Lat</th><th>Lon</th>
-          <th>SNR</th><th>RSSI</th><th>Hops</th>
+          <th>Elev (ft)</th><th>SNR</th><th>RSSI</th><th>Hops</th><th>ID</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>`;

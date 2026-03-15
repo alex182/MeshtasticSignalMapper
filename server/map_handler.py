@@ -34,7 +34,7 @@ def render_points_to_file(points: list[dict], output_path: str, tiles: str = TIL
     else:
         center = DEFAULT_CENTER
 
-    m = folium.Map(location=center, zoom_start=14, tiles="Cartodb dark_matter")
+    m = folium.Map(location=center, zoom_start=14, tiles=tiles)
 
     if points:
         coords = [(p["lat"], p["lon"]) for p in points]
@@ -58,7 +58,7 @@ def render_points_to_file(points: list[dict], output_path: str, tiles: str = TIL
                 f"SNR: {pt['snr']} dB<br>"
                 f"RSSI: {pt['rssi']} dBm<br>"
                 f"Time: {pt['timestamp']}<br>"
-                f"Elevation: {pt['elevation']} m<br>"
+                f"Elevation: {pt['elevation'] * 3.28084:.0f} ft<br>"
                 f"ID: {msg_id[:8]}…"
             )
             tooltip_text = f"#{idx + 1} | SNR: {pt['snr']} dB | RSSI: {pt['rssi']} dBm"

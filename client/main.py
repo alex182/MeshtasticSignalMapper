@@ -12,7 +12,6 @@ import meshtastic.serial_interface
 from pubsub import pub
 from flask import Flask, jsonify, render_template, request
 
-from gps_mock import GPSMock
 from map_handler import MapHandler, TILES_LIGHT, TILES_DARK
 
 logging.basicConfig(
@@ -28,10 +27,20 @@ SERVER_NODE_ID: str | None = _raw_node if len(_raw_node) > 1 else None  # "!" al
 MAP_OUTPUT = os.environ.get("MAP_OUTPUT", "/app/static/map.html")
 WEB_PORT = int(os.environ.get("WEB_PORT", "5001"))
 
-gps = GPSMock(
-    start_lat=float(os.environ.get("GPS_START_LAT", "37.7749")),
-    start_lon=float(os.environ.get("GPS_START_LON", "-122.4194")),
-)
+_gps_source = os.environ.get("GPS_SOURCE", "mock").lower()
+if _gps_source == "hat":
+    from gps_hat import GPSHat
+    gps = GPSHat(
+        port=os.environ.get("GPS_SERIAL_PORT", "/dev/ttyS0"),
+        baud=int(os.environ.get("GPS_BAUD_RATE", "9600")),
+    )
+else:
+    from gps_mock import GPSMock
+    gps = GPSMock(
+        start_lat=float(os.environ.get("GPS_START_LAT", "37.7749")),
+        start_lon=float(os.environ.get("GPS_START_LON", "-122.4194")),
+    )
+GPS_SOURCE_NAME: str = _gps_source  # tracks current runtime source ("hat" or "mock")
 
 interface = None
 map_handler = MapHandler(MAP_OUTPUT)
@@ -95,7 +104,11 @@ def send_location() -> str | None:
         logger.debug("No target node configured, skipping send.")
         return None
 
-    reading = gps.get_reading()
+    try:
+        reading = gps.get_reading()
+    except RuntimeError as exc:
+        logger.warning("GPS not ready: %s", exc)
+        return None
     message_id = str(uuid.uuid4())
     payload = {
         "messageId": message_id,
@@ -113,6 +126,7 @@ def send_location() -> str | None:
             "seq": seq,
             "lat": reading.lat,
             "lon": reading.lon,
+            "elevation": reading.elevation,
             "timestamp": reading.timestamp,
             "sentAt": time.time(),
             "status": "pending",
@@ -200,6 +214,42 @@ def api_set_config():
     return jsonify({"serverNodeId": SERVER_NODE_ID})
 
 
+@app.route("/api/gps-source", methods=["GET"])
+def api_get_gps_source():
+    return jsonify({"source": GPS_SOURCE_NAME})
+
+
+@app.route("/api/gps-source", methods=["POST"])
+def api_set_gps_source():
+    global gps, GPS_SOURCE_NAME
+    body = request.get_json(silent=True) or {}
+    source = body.get("source", "").lower()
+    if source not in ("hat", "mock"):
+        return jsonify({"error": "source must be 'hat' or 'mock'"}), 400
+    if source == GPS_SOURCE_NAME:
+        return jsonify({"source": GPS_SOURCE_NAME})
+    try:
+        if source == "hat":
+            from gps_hat import GPSHat
+            new_gps = GPSHat(
+                port=os.environ.get("GPS_SERIAL_PORT", "/dev/ttyS0"),
+                baud=int(os.environ.get("GPS_BAUD_RATE", "9600")),
+            )
+        else:
+            from gps_mock import GPSMock
+            new_gps = GPSMock(
+                start_lat=float(os.environ.get("GPS_START_LAT", "37.7749")),
+                start_lon=float(os.environ.get("GPS_START_LON", "-122.4194")),
+            )
+        gps = new_gps
+        GPS_SOURCE_NAME = source
+        logger.info("GPS source switched to %s", source)
+        return jsonify({"source": GPS_SOURCE_NAME})
+    except Exception as exc:
+        logger.error("Failed to switch GPS source to %s: %s", source, exc)
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.route("/api/status")
 def api_status():
     with _messages_lock:
@@ -210,6 +260,7 @@ def api_status():
         "total": total,
         "acked": acked,
         "sendInterval": SEND_INTERVAL,
+        "gpsSource": GPS_SOURCE_NAME,
         "last_lat": last["lat"] if last else None,
         "last_lon": last["lon"] if last else None,
         "last_timestamp": last["timestamp"] if last else None,
