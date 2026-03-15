@@ -16,8 +16,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install server dependencies
-        run: pip install folium flask
+      - name: Install dependencies
+        run: pip install folium flask pytest
 
       - name: Run tests
         run: python3 -m pytest tests/ -v
