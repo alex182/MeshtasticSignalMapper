@@ -78,7 +78,8 @@ class TestRenderPointsToFile(unittest.TestCase):
         render_points_to_file([_point(elevation=1234.0)], self.output)
         with open(self.output) as f:
             content = f.read()
-        self.assertIn("1234.0", content)
+        # 1234.0 m * 3.28084 = 4049 ft
+        self.assertIn("4049", content)
 
     def test_creates_parent_dirs_if_missing(self):
         nested_output = os.path.join(self.tmpdir, "a", "b", "map.html")
