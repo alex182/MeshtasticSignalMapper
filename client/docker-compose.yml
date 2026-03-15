@@ -6,14 +6,20 @@ services:
     container_name: meshtastic-client
     restart: unless-stopped
     devices:
-      # Adjust to match your actual USB serial device (check: ls /dev/ttyUSB* or /dev/ttyACM*)
-      - /dev/ttyUSB0:/dev/ttyACM0
+      # Meshtastic USB board (check: ls /dev/ttyUSB* or /dev/ttyACM*)
+      - /dev/ttyUSB0:/dev/ttyUSB0
+      # Adafruit Ultimate GPS HAT — UART on Raspberry Pi
+      # Remove this line if using GPS_SOURCE=mock
+      - /dev/ttyS0:/dev/ttyS0
     ports:
       - "5002:5002"
     environment:
-      MESHTASTIC_PORT: /dev/ttyACM0
-      SEND_INTERVAL: "10" # seconds between GPS broadcasts
-      GPS_START_LAT: "39.0594" # mock GPS starting latitude
-      GPS_START_LON: "-94.8827" # mock GPS starting longitude
-      SERVER_NODE_ID: "" # Meshtastic node ID of the server (run: meshtastic --info)
+      MESHTASTIC_PORT: /dev/ttyUSB0
+      SEND_INTERVAL: "10"       # seconds between GPS broadcasts
+      GPS_SOURCE: "mock"         # "hat" = Adafruit GPS HAT, "mock" = simulated
+      GPS_SERIAL_PORT: /dev/ttyS0
+      GPS_BAUD_RATE: "9600"
+      GPS_START_LAT: "39.0594" # used only when GPS_SOURCE=mock
+      GPS_START_LON: "-94.8827" # used only when GPS_SOURCE=mock
+      SERVER_NODE_ID: ""        # Meshtastic node ID of the server (run: meshtastic --info)
       WEB_PORT: "5002"

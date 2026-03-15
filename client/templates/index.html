@@ -134,6 +134,37 @@
     .chip-value.acked { color: #68d391; }
     .chip-value.pending { color: #f6ad55; }
 
+    /* GPS source */
+    #gps-source-panel {
+      border-bottom: 1px solid #0f3460;
+      padding: 0.5rem 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    #gps-source-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #a0aec0;
+    }
+    #btn-gps-source {
+      background: #0f3460;
+      color: #90cdf4;
+      border: none;
+      border-radius: 4px;
+      padding: 0.2rem 0.6rem;
+      font-size: 0.72rem;
+      cursor: pointer;
+      min-width: 60px;
+      text-align: center;
+    }
+    #btn-gps-source:hover { background: #1a4a7a; }
+    #btn-gps-source.hat { background: #276749; color: #9ae6b4; }
+    #btn-gps-source.hat:hover { background: #2f855a; }
+
     /* Node selector */
     #node-panel {
       border-bottom: 1px solid #0f3460;
@@ -331,6 +362,12 @@
           <div class="chip-value pending" id="stat-pending">—</div>
           <div class="chip-label">Pending</div>
         </div>
+      </div>
+
+      <!-- GPS source -->
+      <div id="gps-source-panel">
+        <span id="gps-source-label">GPS Source</span>
+        <button id="btn-gps-source" title="Switch GPS source">Mock</button>
       </div>
 
       <!-- Node selector -->
@@ -615,6 +652,9 @@
           `${status.last_lat.toFixed(5)}, ${status.last_lon.toFixed(5)}`;
       }
 
+      // Sync GPS source button with server state
+      if (status.gpsSource) setGpsSourceUI(status.gpsSource);
+
       renderMessageList(messages);
     }
 
@@ -662,6 +702,38 @@
     });
     document.getElementById('refresh-map').addEventListener('change', function() {
       startMapTimer(parseInt(this.value, 10));
+    });
+
+    // ---- GPS source toggle ----
+
+    function setGpsSourceUI(source) {
+      const btn = document.getElementById('btn-gps-source');
+      const isHat = source === 'hat';
+      btn.textContent = isHat ? 'HAT' : 'Mock';
+      btn.classList.toggle('hat', isHat);
+      btn.title = isHat ? 'Switch to simulated GPS' : 'Switch to GPS HAT';
+    }
+
+    document.getElementById('btn-gps-source').addEventListener('click', async function() {
+      const btn = this;
+      const currentIsHat = btn.classList.contains('hat');
+      const next = currentIsHat ? 'mock' : 'hat';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/gps-source', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: next }),
+        });
+        const data = await res.json();
+        if (data.error) {
+          alert(`GPS switch failed: ${data.error}`);
+        } else {
+          setGpsSourceUI(data.source);
+        }
+      } finally {
+        btn.disabled = false;
+      }
     });
 
     // ---- Init ----

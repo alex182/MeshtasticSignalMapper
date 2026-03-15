@@ -32,7 +32,8 @@ MeshtasticSignalMapper/
 │   ├── docker-compose.yml        # deploy on car machine
 │   ├── main.py                   # GPS sender + ACK handler + Flask web UI
 │   ├── map_handler.py            # Folium map rendering (thread-safe)
-│   └── gps_mock.py               # simulated GPS (replace with real hardware)
+│   ├── gps_mock.py               # simulated GPS with eastward drift
+│   └── gps_hat.py                # Adafruit Ultimate GPS HAT (UART/NMEA)
 ├── server/
 │   ├── Dockerfile
 │   ├── requirements.txt
@@ -43,7 +44,8 @@ MeshtasticSignalMapper/
 │       └── index.html            # web UI
 ├── tests/
 │   ├── client/
-│   │   └── test_main.py
+│   │   ├── test_main.py
+│   │   └── test_gps_hat.py
 │   └── server/
 │       ├── test_main.py
 │       └── test_map_handler.py
@@ -79,12 +81,12 @@ Both the client and server have a web UI with a shared layout: header with role 
 
 **Client → Server**
 ```json
-{"messageId": "<uuid4>", "lat": 39.059200, "lon": -94.880400, "timestamp": "2026-03-10T18:20:00Z"}
+{"messageId": "<uuid4>", "lat": 39.059200, "lon": -94.880400, "elevation": 312.4, "timestamp": "2026-03-10T18:20:00Z"}
 ```
 
 **Server → Client (ACK)**
 ```json
-{"messageId": "<uuid4>", "snr": 6.25, "rssi": -90, "ack": true}
+{"messageId": "<uuid4>", "snr": 6.25, "rssi": -90, "elevation": 312.4, "ack": true}
 ```
 
 SNR and RSSI are extracted from Meshtastic packet metadata (`rxSnr` / `rxRssi`), not from the message body. Hop count is derived from `hopStart - hopLimit`.
@@ -107,8 +109,8 @@ Open `http://<server-ip>:5000` in a browser.
 
 1. Connect the Meshtastic board via USB
 2. Edit `client/docker-compose.yml` — update the `devices:` path and `MESHTASTIC_PORT`
-3. Set `SERVER_NODE_ID` to the server's node ID (run `meshtastic --info`), or leave it empty (`""`) to auto-scan for nodes from the web UI
-4. Adjust `GPS_START_LAT` / `GPS_START_LON` for the mock GPS starting location
+3. Set `GPS_SOURCE` to `hat` (Adafruit GPS HAT) or `mock` (simulated). See [GPS Hardware](#gps-hardware) below.
+4. Set `SERVER_NODE_ID` to the server's node ID (run `meshtastic --info`), or leave it empty (`""`) to auto-scan for nodes from the web UI
 
 ```bash
 cd client
@@ -133,8 +135,11 @@ docker compose -f docker-compose.dev.yml up -d
 |---|---|---|
 | `MESHTASTIC_PORT` | `/dev/ttyUSB0` | Serial device for the Meshtastic board |
 | `SEND_INTERVAL` | `10` | Seconds between GPS broadcasts |
-| `GPS_START_LAT` | `37.7749` | Mock GPS starting latitude |
-| `GPS_START_LON` | `-122.4194` | Mock GPS starting longitude |
+| `GPS_SOURCE` | `mock` | GPS source: `hat` (Adafruit GPS HAT) or `mock` (simulated) |
+| `GPS_SERIAL_PORT` | `/dev/ttyS0` | Serial device for the GPS HAT (used when `GPS_SOURCE=hat`) |
+| `GPS_BAUD_RATE` | `9600` | Baud rate for the GPS HAT serial port |
+| `GPS_START_LAT` | `37.7749` | Mock GPS starting latitude (used when `GPS_SOURCE=mock`) |
+| `GPS_START_LON` | `-122.4194` | Mock GPS starting longitude (used when `GPS_SOURCE=mock`) |
 | `SERVER_NODE_ID` | *(broadcast)* | Meshtastic node ID of the server (e.g. `!a6961690`). Leave empty to auto-scan from the UI. |
 | `WEB_PORT` | `5002` | Flask listen port for the client web UI |
 
@@ -149,7 +154,27 @@ docker compose -f docker-compose.dev.yml up -d
 
 ## GPS Hardware
 
-`client/gps_mock.py` simulates a GPS hat with slow eastward drift. To use real hardware, replace the `GPSMock.get_reading()` implementation with reads from your GPS device (e.g. via `gpsd` or direct serial NMEA parsing).
+Two GPS sources are supported, selected via the `GPS_SOURCE` environment variable:
+
+### `GPS_SOURCE=mock` (default)
+
+`client/gps_mock.py` simulates a moving vehicle with slow eastward drift. Useful for development without hardware. Configure the starting coordinates with `GPS_START_LAT` / `GPS_START_LON`.
+
+### `GPS_SOURCE=hat` — Adafruit Ultimate GPS HAT
+
+`client/gps_hat.py` reads real position from the [Adafruit Ultimate GPS HAT](https://www.adafruit.com/product/2324) connected to the Raspberry Pi's UART pins. It parses NMEA `GGA` sentences for latitude, longitude, and MSL altitude.
+
+**Hardware setup:**
+1. Attach the GPS HAT to the Pi's GPIO header
+2. Enable the UART in `/boot/config.txt`:
+   ```
+   enable_uart=1
+   dtoverlay=disable-bt
+   ```
+3. Reboot — the GPS will appear as `/dev/ttyS0`
+4. In `client/docker-compose.yml`, set `GPS_SOURCE: "hat"` and ensure `/dev/ttyS0` is in `devices:`
+
+The HAT reader runs in a background thread and `send_location()` will skip transmission (with a warning) until the first satellite fix is acquired.
 
 ## Testing
 
@@ -157,13 +182,13 @@ docker compose -f docker-compose.dev.yml up -d
 python3 -m pytest tests/ -v
 ```
 
-Tests cover Meshtastic packet handling, ACK flow, session management, Flask routes, map rendering, and thread safety. Heavy dependencies (meshtastic, pubsub) are stubbed at the module level so no hardware is required.
+Tests cover Meshtastic packet handling, ACK flow, session management, Flask routes, map rendering, GPS HAT NMEA parsing, and thread safety. Heavy dependencies (meshtastic, pubsub, serial) are stubbed at the module level so no hardware is required.
 
 ## Dependencies
 
 | Side | Packages |
 |---|---|
-| Client | `meshtastic >= 2.3.0`, `pyserial >= 3.5`, `flask >= 3.0`, `folium >= 0.14` |
+| Client | `meshtastic >= 2.3.0`, `pyserial >= 3.5`, `pynmea2 >= 1.18`, `flask >= 3.0`, `folium >= 0.14` |
 | Server | `meshtastic >= 2.3.0`, `pyserial >= 3.5`, `flask >= 3.0`, `folium >= 0.14` |
 
 Both run on `python:3.12-alpine`.
