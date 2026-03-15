@@ -566,19 +566,23 @@
       const rows = [...visible].reverse().map(m => {
         const originalIndex = allMessages.indexOf(m);
         const isPending = m.status === 'pending';
-        const snr  = isPending ? '—' : `<span class="${snrClass(m.snr)}">${m.snr}</span>`;
-        const rssi = isPending ? '—' : m.rssi;
-        const rtt  = isPending ? '—' : `${m.rttMs}s`;
+        const snr    = isPending ? '—' : `<span class="${snrClass(m.snr)}">${m.snr}</span>`;
+        const rssi   = isPending ? '—' : m.rssi;
+        const ackAt  = isPending ? '—' : formatTime(m.ackTime);
+        const rtt    = isPending ? '—' : `${m.rttMs}s`;
         const status = isPending
           ? `<span class="status-pending">⋯</span>`
           : `<span class="status-acked">✓</span>`;
+        const elev = (m.elevation * 3.28084).toFixed(0);
         return `<tr onclick="highlightMarker(${originalIndex})">
           <td class="td-seq">${m.seq}</td>
           <td>${formatTime(m.timestamp)}</td>
           <td>${m.lat.toFixed(4)}</td>
           <td>${m.lon.toFixed(4)}</td>
+          <td>${elev}</td>
           <td>${snr}</td>
           <td>${rssi}</td>
+          <td>${ackAt}</td>
           <td>${rtt}</td>
           <td class="td-status">${status}</td>
         </tr>`;
@@ -586,7 +590,7 @@
       return `<table id="msg-table">
         <thead><tr>
           <th>#</th><th>Sent</th><th>Lat</th><th>Lon</th>
-          <th>SNR</th><th>RSSI</th><th>RTT</th><th></th>
+          <th>Elev (ft)</th><th>SNR</th><th>RSSI</th><th>ACK At</th><th>RTT</th><th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
