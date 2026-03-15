@@ -27,6 +27,8 @@ sys.modules.setdefault("pubsub", pubsub_mod)
 map_handler_mod = types.ModuleType("map_handler")
 map_handler_mod.MapHandler = MagicMock()
 map_handler_mod.render_points_to_file = MagicMock()
+map_handler_mod.TILES_LIGHT = "OpenStreetMap"
+map_handler_mod.TILES_DARK = "CartoDB dark_matter"
 sys.modules.setdefault("map_handler", map_handler_mod)
 
 # Redirect paths that are created at module-load time
