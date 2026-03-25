@@ -1,3 +1,4 @@
+import io
 import json
 import sys
 import types
@@ -59,6 +60,10 @@ import client.main as main_module  # noqa: E402  (imported after stubs)
 # ---------------------------------------------------------------------------
 
 class TestOnReceive(unittest.TestCase):
+    def setUp(self):
+        main_module.sent_messages.clear()
+        main_module._messages_by_id.clear()
+
     def _make_packet(self, text: str) -> dict:
         return {"decoded": {"portnum": "TEXT_MESSAGE_APP", "text": text}}
 
@@ -95,6 +100,33 @@ class TestOnReceive(unittest.TestCase):
         packet = self._make_packet("")
         main_module.on_receive(packet, MagicMock())
 
+    def test_ack_calls_ack_point_when_message_known(self):
+        entry = {
+            "lat": 1.0,
+            "lon": 2.0,
+            "elevation": 0.0,
+            "timestamp": "ts",
+            "sentAt": 0.0,
+            "status": "pending",
+        }
+        main_module._messages_by_id["abc-123"] = entry
+        main_module.map_handler.ack_point.reset_mock()
+        payload = {"messageId": "abc-123", "snr": 7.5, "rssi": -85, "ack": True}
+        packet = self._make_packet(json.dumps(payload))
+        with self.assertLogs(level="INFO"):
+            main_module.on_receive(packet, MagicMock())
+        main_module.map_handler.ack_point.assert_called_once_with(
+            message_id="abc-123", snr=7.5, rssi=-85
+        )
+
+    def test_ack_does_not_call_ack_point_for_unknown_message(self):
+        main_module.map_handler.ack_point.reset_mock()
+        payload = {"messageId": "unknown-id", "snr": 7.5, "rssi": -85, "ack": True}
+        packet = self._make_packet(json.dumps(payload))
+        with self.assertLogs(level="INFO"):
+            main_module.on_receive(packet, MagicMock())
+        main_module.map_handler.ack_point.assert_not_called()
+
 
 class TestSendLocation(unittest.TestCase):
     def setUp(self):
@@ -102,6 +134,8 @@ class TestSendLocation(unittest.TestCase):
         main_module.interface = self.mock_interface
         self._original_node = main_module.SERVER_NODE_ID
         main_module.SERVER_NODE_ID = "!testnode"
+        main_module.sent_messages.clear()
+        main_module._messages_by_id.clear()
 
     def tearDown(self):
         main_module.SERVER_NODE_ID = self._original_node
@@ -137,6 +171,169 @@ class TestSendLocation(unittest.TestCase):
         call_kwargs = self.mock_interface.sendText.call_args[1]
         self.assertEqual(call_kwargs["destinationId"], "!deadbeef")
         main_module.SERVER_NODE_ID = original
+
+    def test_calls_add_pending_point(self):
+        main_module.map_handler.add_pending_point.reset_mock()
+        main_module.send_location()
+        main_module.map_handler.add_pending_point.assert_called_once()
+
+    def test_add_pending_point_called_with_correct_lat_lon(self):
+        main_module.map_handler.add_pending_point.reset_mock()
+        main_module.send_location()
+        call_kwargs = main_module.map_handler.add_pending_point.call_args[1]
+        self.assertEqual(call_kwargs["lat"], 37.7749)
+        self.assertEqual(call_kwargs["lon"], -122.4194)
+
+
+class TestFlaskRoutes(unittest.TestCase):
+    def setUp(self):
+        main_module.app.config["TESTING"] = True
+        self.client = main_module.app.test_client()
+        main_module.sent_messages.clear()
+        main_module._messages_by_id.clear()
+        main_module._sending_enabled = True
+        main_module.SEND_INTERVAL = 10
+        main_module._autosave_path = None
+        main_module._last_autosave_at = None
+
+    def test_get_send_interval_returns_values(self):
+        resp = self.client.get("/api/send-interval")
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertIn("sendInterval", data)
+        self.assertIn("min", data)
+        self.assertIn("max", data)
+
+    def test_post_send_interval_updates_value(self):
+        resp = self.client.post(
+            "/api/send-interval",
+            data=json.dumps({"sendInterval": 30}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(main_module.SEND_INTERVAL, 30)
+
+    def test_post_send_interval_rejects_out_of_range(self):
+        resp = self.client.post(
+            "/api/send-interval",
+            data=json.dumps({"sendInterval": 9999}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_get_sending_returns_state(self):
+        resp = self.client.get("/api/sending")
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertIn("sending", data)
+
+    def test_post_sending_stops(self):
+        resp = self.client.post(
+            "/api/sending",
+            data=json.dumps({"sending": False}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(main_module._sending_enabled)
+
+    def test_post_sending_starts(self):
+        main_module._sending_enabled = False
+        resp = self.client.post(
+            "/api/sending",
+            data=json.dumps({"sending": True}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(main_module._sending_enabled)
+
+    def test_clear_empties_messages(self):
+        main_module.sent_messages.append({"messageId": "test"})
+        self.client.post("/api/clear")
+        self.assertEqual(len(main_module.sent_messages), 0)
+
+    def test_clear_resets_autosave_path(self):
+        main_module._autosave_path = "something"
+        self.client.post("/api/clear")
+        self.assertIsNone(main_module._autosave_path)
+
+    def test_save_returns_attachment(self):
+        resp = self.client.post("/api/save")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("attachment", resp.headers.get("Content-Disposition", ""))
+
+    def test_save_body_is_valid_json(self):
+        resp = self.client.post("/api/save")
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertIn("messages", data)
+
+    def test_import_loads_messages(self):
+        payload = {
+            "messages": [
+                {
+                    "messageId": "x",
+                    "lat": 1.0,
+                    "lon": 2.0,
+                    "elevation": 0.0,
+                    "timestamp": "ts",
+                    "status": "acked",
+                    "snr": 5.0,
+                    "rssi": -90,
+                    "seq": 1,
+                    "sentAt": 0,
+                    "ackTime": "ts",
+                    "rttMs": 1.0,
+                }
+            ]
+        }
+        data = {"file": (io.BytesIO(json.dumps(payload).encode()), "session.json")}
+        resp = self.client.post(
+            "/api/import", data=data, content_type="multipart/form-data"
+        )
+        self.assertEqual(resp.status_code, 200)
+        result = json.loads(resp.data)
+        self.assertEqual(result["imported"], 1)
+
+    def test_import_stops_sending(self):
+        payload = {
+            "messages": [
+                {
+                    "messageId": "x",
+                    "lat": 1.0,
+                    "lon": 2.0,
+                    "elevation": 0.0,
+                    "timestamp": "ts",
+                    "status": "acked",
+                    "snr": 5.0,
+                    "rssi": -90,
+                    "seq": 1,
+                    "sentAt": 0,
+                    "ackTime": "ts",
+                    "rttMs": 1.0,
+                }
+            ]
+        }
+        data = {"file": (io.BytesIO(json.dumps(payload).encode()), "session.json")}
+        self.client.post("/api/import", data=data, content_type="multipart/form-data")
+        self.assertFalse(main_module._sending_enabled)
+
+    def test_import_invalid_json_returns_400(self):
+        data = {"file": (io.BytesIO(b"not-json"), "session.json")}
+        resp = self.client.post(
+            "/api/import", data=data, content_type="multipart/form-data"
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_import_missing_file_returns_400(self):
+        resp = self.client.post("/api/import", data={}, content_type="multipart/form-data")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_status_includes_autosave_fields(self):
+        resp = self.client.get("/api/status")
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertIn("lastAutosaveAt", data)
+        self.assertIn("autosaveInterval", data)
 
 
 if __name__ == "__main__":
