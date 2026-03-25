@@ -79,6 +79,54 @@
     }
     #btn-refresh-map:hover, #btn-map-style:hover { background: #1a4a7a; }
     #btn-map-style.dark { background: #1a1a2e; color: #90cdf4; border: 1px solid #0f3460; }
+    #btn-sending {
+      background: #276749;
+      color: #9ae6b4;
+      border: none;
+      border-radius: 4px;
+      padding: 0.2rem 0.7rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      cursor: pointer;
+      min-width: 58px;
+      text-align: center;
+    }
+    #btn-sending:hover { background: #2f855a; }
+    #btn-sending.stopped { background: #742a2a; color: #feb2b2; }
+    #btn-sending.stopped:hover { background: #9b2c2c; }
+    #btn-save {
+      background: #0f3460;
+      color: #90cdf4;
+      border: none;
+      border-radius: 4px;
+      padding: 0.2rem 0.7rem;
+      font-size: 0.72rem;
+      cursor: pointer;
+    }
+    #btn-save:hover { background: #1a4a7a; }
+    #btn-save:disabled { opacity: 0.5; cursor: default; }
+    #btn-import {
+      background: #0f3460;
+      color: #90cdf4;
+      border: none;
+      border-radius: 4px;
+      padding: 0.2rem 0.7rem;
+      font-size: 0.72rem;
+      cursor: pointer;
+    }
+    #btn-import:hover { background: #1a4a7a; }
+    #btn-import:disabled { opacity: 0.5; cursor: default; }
+    #btn-clear {
+      background: #742a2a;
+      color: #feb2b2;
+      border: none;
+      border-radius: 4px;
+      padding: 0.2rem 0.7rem;
+      font-size: 0.72rem;
+      cursor: pointer;
+    }
+    #btn-clear:hover { background: #9b2c2c; }
+    #btn-clear:disabled { opacity: 0.5; cursor: default; }
 
     .main { display: flex; flex: 1; overflow: hidden; }
 
@@ -134,6 +182,55 @@
     .chip-value.acked { color: #68d391; }
     .chip-value.pending { color: #f6ad55; }
 
+    /* Sparkline charts */
+    #charts-panel {
+      border-bottom: 1px solid #0f3460;
+      padding: 0.5rem 0.75rem;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .chart-row-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #718096;
+      margin-bottom: 0.15rem;
+    }
+    .chart-row-label span { font-weight: 400; letter-spacing: 0; text-transform: none; color: #4a5568; }
+    .chart-wrap { line-height: 0; }
+    #chart-tooltip {
+      display: none;
+      position: fixed;
+      background: #1a3a5c;
+      color: #90cdf4;
+      border: 1px solid #2b6cb0;
+      border-radius: 4px;
+      padding: 0.2rem 0.55rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      pointer-events: none;
+      z-index: 9999;
+      white-space: nowrap;
+    }
+
+    #autosave-panel {
+      border-bottom: 1px solid #0f3460;
+      padding: 0.35rem 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      font-size: 0.7rem;
+      color: #718096;
+    }
+    #autosave-time { color: #68d391; }
+    #autosave-time.never { color: #4a5568; }
+
     /* GPS source */
     #gps-source-panel {
       border-bottom: 1px solid #0f3460;
@@ -164,6 +261,38 @@
     #btn-gps-source:hover { background: #1a4a7a; }
     #btn-gps-source.hat { background: #276749; color: #9ae6b4; }
     #btn-gps-source.hat:hover { background: #2f855a; }
+
+    /* Send interval */
+    #send-interval-panel {
+      border-bottom: 1px solid #0f3460;
+      padding: 0.5rem 0.75rem;
+      flex-shrink: 0;
+    }
+    #send-interval-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.3rem;
+    }
+    #send-interval-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #a0aec0;
+    }
+    #send-interval-value {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #90cdf4;
+      min-width: 40px;
+      text-align: right;
+    }
+    #send-interval-slider {
+      width: 100%;
+      accent-color: #4a90d9;
+      cursor: pointer;
+    }
 
     /* Node selector */
     #node-panel {
@@ -330,6 +459,11 @@
   <header>
     <h1>Meshtastic Signal Mapper</h1>
     <span class="role-badge">CLIENT</span>
+    <button id="btn-sending" title="Stop sending">Running</button>
+    <button id="btn-save" title="Save session to JSON">Save</button>
+    <button id="btn-import" title="Import saved session JSON">Import</button>
+    <button id="btn-clear" title="Clear session and map">Clear</button>
+    <input type="file" id="import-file-input" accept=".json" style="display:none">
     <div id="refresh-control">
       Map:
       <button id="btn-map-style" title="Switch to dark map">Dark</button>
@@ -345,6 +479,7 @@
     <span id="gps-badge">No fix yet</span>
   </header>
 
+  <div id="chart-tooltip"></div>
   <div class="main">
     <aside id="sidebar">
 
@@ -364,10 +499,37 @@
         </div>
       </div>
 
+      <!-- Sparkline charts -->
+      <div id="charts-panel">
+        <div>
+          <div class="chart-row-label">SNR <span id="snr-range"></span></div>
+          <div class="chart-wrap" id="snr-chart"></div>
+        </div>
+        <div>
+          <div class="chart-row-label">RTT <span id="rtt-range"></span></div>
+          <div class="chart-wrap" id="rtt-chart"></div>
+        </div>
+      </div>
+
+      <!-- Auto-save status -->
+      <div id="autosave-panel">
+        <span>Auto-save</span>
+        <span id="autosave-time" class="never">Never</span>
+      </div>
+
       <!-- GPS source -->
       <div id="gps-source-panel">
         <span id="gps-source-label">GPS Source</span>
         <button id="btn-gps-source" title="Switch GPS source">Mock</button>
+      </div>
+
+      <!-- Send interval -->
+      <div id="send-interval-panel">
+        <div id="send-interval-row">
+          <span id="send-interval-label">Send Interval</span>
+          <span id="send-interval-value">—</span>
+        </div>
+        <input type="range" id="send-interval-slider" min="1" max="120" step="1" value="10">
       </div>
 
       <!-- Node selector -->
@@ -414,6 +576,119 @@
   </div>
 
   <script>
+    // ---- Sparkline ----
+
+    const _CHART_VW = 1000, _CHART_VH = 100, _CHART_PX = 8, _CHART_PY = 8;
+
+    function buildSparkline(values, { minY, maxY, refLines = [], color = '#63b3ed', height = 44 } = {}) {
+      const VW = _CHART_VW, VH = _CHART_VH, px = _CHART_PX, py = _CHART_PY;
+      if (values.length === 0) {
+        return `<svg viewBox="0 0 ${VW} ${VH}" style="width:100%;height:${height}px">` +
+          `<text x="500" y="58" text-anchor="middle" fill="#4a5568" font-size="28" font-family="sans-serif">No data</text></svg>`;
+      }
+      const lo = minY !== undefined ? minY : Math.min(...values);
+      const hi = maxY !== undefined ? maxY : Math.max(...values);
+      const range = hi - lo || 1;
+      const W = VW - px * 2, H = VH - py * 2;
+      const tx = (i) => px + (values.length < 2 ? W / 2 : (i / (values.length - 1)) * W);
+      const ty = (v) => py + (1 - (v - lo) / range) * H;
+
+      let inner = '';
+
+      // Reference lines
+      for (const r of refLines) {
+        const ry = ty(r.value);
+        inner += `<line x1="${px}" y1="${ry}" x2="${VW - px}" y2="${ry}" stroke="${r.color}" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.45"/>`;
+      }
+
+      // Fill area under line
+      if (values.length > 1) {
+        const pts = values.map((v, i) => `${tx(i)},${ty(v)}`).join(' ');
+        const fillPts = `${tx(0)},${VH - py} ${pts} ${tx(values.length - 1)},${VH - py}`;
+        inner += `<polygon points="${fillPts}" fill="${color}" opacity="0.08"/>`;
+        inner += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
+      }
+
+      // Last point dot
+      const lx = tx(values.length - 1), ly = ty(values[values.length - 1]);
+      inner += `<circle cx="${lx}" cy="${ly}" r="5" fill="${color}"/>`;
+
+      // Hover line (hidden by default)
+      inner += `<line class="hover-line" x1="0" y1="${py}" x2="0" y2="${VH - py}" stroke="#ffffff" stroke-width="2" opacity="0" pointer-events="none"/>`;
+
+      return `<svg viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="none" style="width:100%;height:${height}px;cursor:crosshair" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+    }
+
+    function attachChartHover(wrapEl, values, formatFn) {
+      wrapEl._chartValues = values;
+      wrapEl.addEventListener('mousemove', function(e) {
+        if (!values.length) return;
+        const svg = wrapEl.querySelector('svg');
+        if (!svg) return;
+        const rect = svg.getBoundingClientRect();
+        const relX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const idx = Math.round(relX * (values.length - 1));
+        // Move hover line in viewBox coordinates
+        const vx = _CHART_PX + (values.length < 2 ? (_CHART_VW - _CHART_PX * 2) / 2 :
+          (idx / (values.length - 1)) * (_CHART_VW - _CHART_PX * 2));
+        const line = svg.querySelector('.hover-line');
+        if (line) { line.setAttribute('x1', vx); line.setAttribute('x2', vx); line.setAttribute('opacity', '0.35'); }
+        showChartTooltip(e.clientX, e.clientY, formatFn(values[idx], idx));
+      });
+      wrapEl.addEventListener('mouseleave', function() {
+        const line = wrapEl.querySelector('.hover-line');
+        if (line) line.setAttribute('opacity', '0');
+        hideChartTooltip();
+      });
+    }
+
+    function showChartTooltip(x, y, text) {
+      const tt = document.getElementById('chart-tooltip');
+      tt.textContent = text;
+      tt.style.display = 'block';
+      // Keep tooltip inside viewport
+      const ttW = 120;
+      tt.style.left = (x + 14 + ttW > window.innerWidth ? x - ttW - 6 : x + 14) + 'px';
+      tt.style.top = (y - 28) + 'px';
+    }
+
+    function hideChartTooltip() {
+      document.getElementById('chart-tooltip').style.display = 'none';
+    }
+
+    function renderCharts(messages) {
+      const acked = messages.filter(m => m.status === 'acked').slice(-60);
+
+      // SNR chart
+      const snrValues = acked.map(m => m.snr);
+      const snrWrap = document.getElementById('snr-chart');
+      snrWrap.innerHTML = buildSparkline(snrValues, {
+        minY: Math.min(...(snrValues.length ? snrValues : [0])) - 2,
+        maxY: Math.max(...(snrValues.length ? snrValues : [15])) + 2,
+        refLines: [{ value: 7, color: '#68d391' }, { value: 3, color: '#f6ad55' }],
+        color: '#63b3ed',
+      });
+      attachChartHover(snrWrap, snrValues, (v) => `SNR: ${v.toFixed(1)} dB`);
+      if (snrValues.length) {
+        const mn = Math.min(...snrValues).toFixed(1), mx = Math.max(...snrValues).toFixed(1);
+        document.getElementById('snr-range').textContent = `${mn} / ${mx} dB`;
+      } else {
+        document.getElementById('snr-range').textContent = '';
+      }
+
+      // RTT chart
+      const rttValues = acked.map(m => m.rttMs);
+      const rttWrap = document.getElementById('rtt-chart');
+      rttWrap.innerHTML = buildSparkline(rttValues, { minY: 0, color: '#b794f4' });
+      attachChartHover(rttWrap, rttValues, (v) => `RTT: ${v.toFixed(2)} s`);
+      if (rttValues.length) {
+        const mn = Math.min(...rttValues).toFixed(2), mx = Math.max(...rttValues).toFixed(2);
+        document.getElementById('rtt-range').textContent = `${mn} / ${mx} s`;
+      } else {
+        document.getElementById('rtt-range').textContent = '';
+      }
+    }
+
     // ---- Utilities ----
 
     function snrClass(snr) {
@@ -661,11 +936,62 @@
       // Sync GPS source button with server state
       if (status.gpsSource) setGpsSourceUI(status.gpsSource);
 
+      // Sync auto-save indicator
+      const autosaveEl = document.getElementById('autosave-time');
+      if (status.lastAutosaveAt) {
+        autosaveEl.textContent = new Date(status.lastAutosaveAt).toLocaleTimeString();
+        autosaveEl.classList.remove('never');
+      } else {
+        autosaveEl.textContent = 'Never';
+        autosaveEl.classList.add('never');
+      }
+
+      // Sync send interval slider (in case it changed server-side)
+      if (status.sendInterval) {
+        const slider = document.getElementById('send-interval-slider');
+        if (slider.value != status.sendInterval) {
+          slider.value = status.sendInterval;
+          document.getElementById('send-interval-value').textContent = status.sendInterval + 's';
+        }
+      }
+
       renderMessageList(messages);
+      renderCharts(messages);
     }
 
-    function refreshMap() {
-      document.getElementById('map-frame').src = '/map?' + Date.now();
+    let _viewStateCallback = null;
+
+    window.addEventListener('message', function(e) {
+      if (e.data && e.data.type === 'viewState' && _viewStateCallback) {
+        const cb = _viewStateCallback;
+        _viewStateCallback = null;
+        cb(e.data);
+      }
+    });
+
+    function getMapView() {
+      return new Promise(function(resolve) {
+        const iframe = document.getElementById('map-frame');
+        _viewStateCallback = resolve;
+        try { iframe.contentWindow.postMessage({ type: 'getView' }, '*'); } catch (_) {}
+        setTimeout(function() {
+          if (_viewStateCallback === resolve) { _viewStateCallback = null; resolve(null); }
+        }, 400);
+      });
+    }
+
+    async function refreshMap() {
+      const view = await getMapView();
+      const iframe = document.getElementById('map-frame');
+      if (view) {
+        iframe.onload = function() {
+          iframe.onload = null;
+          setTimeout(function() {
+            iframe.contentWindow.postMessage({ type: 'setView', lat: view.lat, lng: view.lng, zoom: view.zoom }, '*');
+          }, 100);
+        };
+      }
+      iframe.src = '/map?' + Date.now();
     }
 
     // ---- Refresh timers ----
@@ -742,11 +1068,142 @@
       }
     });
 
+    // ---- Send interval ----
+
+    async function loadSendInterval() {
+      const res = await fetch('/api/send-interval');
+      const data = await res.json();
+      const slider = document.getElementById('send-interval-slider');
+      slider.min = data.min;
+      slider.max = data.max;
+      slider.value = data.sendInterval;
+      document.getElementById('send-interval-value').textContent = data.sendInterval + 's';
+    }
+
+    let _sendIntervalDebounce = null;
+
+    document.getElementById('send-interval-slider').addEventListener('input', function() {
+      document.getElementById('send-interval-value').textContent = this.value + 's';
+      clearTimeout(_sendIntervalDebounce);
+      const val = parseInt(this.value, 10);
+      _sendIntervalDebounce = setTimeout(async function() {
+        await fetch('/api/send-interval', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sendInterval: val }),
+        });
+      }, 300);
+    });
+
+    // ---- Clear session ----
+
+    document.getElementById('btn-clear').addEventListener('click', async function() {
+      if (!confirm('Clear all messages and reset the map?')) return;
+      this.disabled = true;
+      try {
+        await fetch('/api/clear', { method: 'POST' });
+        await refreshMessages();
+        refreshMap();
+      } finally {
+        this.disabled = false;
+      }
+    });
+
+    // ---- Import session ----
+
+    document.getElementById('btn-import').addEventListener('click', function() {
+      document.getElementById('import-file-input').click();
+    });
+
+    document.getElementById('import-file-input').addEventListener('change', async function() {
+      const file = this.files[0];
+      if (!file) return;
+      const btn = document.getElementById('btn-import');
+      btn.disabled = true;
+      btn.textContent = 'Importing…';
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        const res = await fetch('/api/import', { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        setSendingUI(false);
+        startMessagesTimer(0);
+        startMapTimer(0);
+        document.getElementById('refresh-messages').value = '0';
+        document.getElementById('refresh-map').value = '0';
+        await Promise.all([refreshMessages(), new Promise(r => setTimeout(r, 200))]);
+        refreshMap();
+        btn.textContent = `Imported ${data.imported}`;
+        setTimeout(() => { btn.textContent = 'Import'; }, 2000);
+      } catch (err) {
+        alert('Import failed: ' + err.message);
+        btn.textContent = 'Import';
+      } finally {
+        btn.disabled = false;
+        this.value = '';
+      }
+    });
+
+    // ---- Save session ----
+
+    document.getElementById('btn-save').addEventListener('click', async function() {
+      this.disabled = true;
+      const orig = this.textContent;
+      try {
+        const res = await fetch('/api/save', { method: 'POST' });
+        if (!res.ok) throw new Error(await res.text());
+        const disposition = res.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="([^"]+)"/);
+        const filename = match ? match[1] : 'session.json';
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+        this.textContent = 'Saved!';
+        setTimeout(() => { this.textContent = orig; }, 2000);
+      } catch (err) {
+        alert('Save failed: ' + err.message);
+      } finally {
+        this.disabled = false;
+      }
+    });
+
+    // ---- Start / Stop sending ----
+
+    function setSendingUI(sending) {
+      const btn = document.getElementById('btn-sending');
+      btn.textContent = sending ? 'Running' : 'Stopped';
+      btn.classList.toggle('stopped', !sending);
+      btn.title = sending ? 'Stop sending' : 'Start sending';
+    }
+
+    document.getElementById('btn-sending').addEventListener('click', async function() {
+      this.disabled = true;
+      try {
+        const current = !this.classList.contains('stopped');
+        const res = await fetch('/api/sending', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sending: !current }),
+        });
+        const data = await res.json();
+        setSendingUI(data.sending);
+      } finally {
+        this.disabled = false;
+      }
+    });
+
     // ---- Init ----
+    loadSendInterval();
     loadNodes();
     refreshMessages();
     startMessagesTimer(10000);
     startMapTimer(10000);
+    fetch('/api/sending').then(r => r.json()).then(d => setSendingUI(d.sending));
   </script>
 </body>
 </html>

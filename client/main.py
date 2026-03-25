@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 
 import meshtastic.serial_interface
 from pubsub import pub
-from flask import Flask, jsonify, render_template, request
+import re
+from flask import Flask, jsonify, render_template, request, Response
 
 from map_handler import MapHandler, TILES_LIGHT, TILES_DARK
 
@@ -22,10 +23,14 @@ logger = logging.getLogger(__name__)
 
 SERIAL_PORT = os.environ.get("MESHTASTIC_PORT", "/dev/ttyUSB0")
 SEND_INTERVAL = int(os.environ.get("SEND_INTERVAL", "10"))
+_SEND_INTERVAL_MIN = 1
+_SEND_INTERVAL_MAX = 120
 _raw_node = os.environ.get("SERVER_NODE_ID", "").strip()
 SERVER_NODE_ID: str | None = _raw_node if len(_raw_node) > 1 else None  # "!" alone is not valid
 MAP_OUTPUT = os.environ.get("MAP_OUTPUT", "/app/static/map.html")
 WEB_PORT = int(os.environ.get("WEB_PORT", "5001"))
+AUTOSAVE_DIR = os.environ.get("AUTOSAVE_DIR", "/app/saves")
+AUTOSAVE_INTERVAL = int(os.environ.get("AUTOSAVE_INTERVAL", "60"))
 
 _gps_source = os.environ.get("GPS_SOURCE", "mock").lower()
 if _gps_source == "hat":
@@ -50,6 +55,13 @@ app = Flask(__name__, static_folder="static", template_folder="templates")
 sent_messages: list[dict] = []
 _messages_by_id: dict[str, dict] = {}
 _messages_lock = threading.Lock()
+
+# Sending control
+_sending_enabled = True
+
+# Auto-save state
+_autosave_path: str | None = None        # fixed for the lifetime of a session
+_last_autosave_at: str | None = None     # ISO timestamp of last successful write
 
 
 # ---------------------------------------------------------------------------
@@ -85,14 +97,7 @@ def on_receive(packet, interface):
                 entry["rssi"] = rssi
                 entry["ackTime"] = datetime.fromtimestamp(ack_time, tz=timezone.utc).isoformat()
                 entry["rttMs"] = round(ack_time - entry["sentAt"], 2)
-                map_handler.add_point(
-                    lat=entry["lat"],
-                    lon=entry["lon"],
-                    snr=snr,
-                    rssi=rssi,
-                    message_id=message_id,
-                    timestamp=entry["timestamp"],
-                )
+                map_handler.ack_point(message_id=message_id, snr=snr, rssi=rssi)
 
     except (json.JSONDecodeError, KeyError) as exc:
         logger.debug("Non-JSON or unexpected packet: %s", exc)
@@ -137,6 +142,14 @@ def send_location() -> str | None:
         }
         sent_messages.append(entry)
         _messages_by_id[message_id] = entry
+
+    map_handler.add_pending_point(
+        lat=reading.lat,
+        lon=reading.lon,
+        elevation=reading.elevation,
+        message_id=message_id,
+        timestamp=reading.timestamp,
+    )
 
     logger.info(
         "Sent | messageId=%s | lat=%s | lon=%s | elevation=%s m",
@@ -250,6 +263,184 @@ def api_set_gps_source():
         return jsonify({"error": str(exc)}), 500
 
 
+def _slugify(name: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9]+", "_", name).strip("_") or "unknown"
+
+
+def _resolve_target_name() -> str:
+    target_name = "broadcast"
+    if SERVER_NODE_ID and interface is not None:
+        try:
+            for node in (interface.nodes or {}).values():
+                if node.get("user", {}).get("id") == SERVER_NODE_ID:
+                    target_name = node.get("user", {}).get("longName") or target_name
+                    break
+        except Exception:
+            pass
+    elif SERVER_NODE_ID:
+        target_name = SERVER_NODE_ID
+    return target_name
+
+
+def _resolve_my_name() -> str:
+    my_name = "unknown"
+    if interface is not None:
+        try:
+            my_num = (interface.myInfo or {}).get("myNodeNum")
+            if my_num is not None:
+                for node in (interface.nodes or {}).values():
+                    if node.get("num") == my_num:
+                        my_name = node.get("user", {}).get("longName") or my_name
+                        break
+        except Exception:
+            pass
+    return my_name
+
+
+def _build_payload() -> dict:
+    """Build the session payload. Must be called with _messages_lock held."""
+    return {
+        "savedAt": datetime.now(tz=timezone.utc).isoformat(),
+        "myNode": _resolve_my_name(),
+        "targetNode": _resolve_target_name(),
+        "gpsSource": GPS_SOURCE_NAME,
+        "totalSent": len(sent_messages),
+        "totalAcked": sum(1 for m in sent_messages if m["status"] == "acked"),
+        "messages": list(sent_messages),
+    }
+
+
+def _do_autosave() -> None:
+    global _autosave_path, _last_autosave_at
+    with _messages_lock:
+        if not sent_messages:
+            return
+        if _autosave_path is None:
+            session_dt = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
+            filename = f"autosave_{session_dt}_{_slugify(_resolve_target_name())}.json"
+            _autosave_path = os.path.join(AUTOSAVE_DIR, filename)
+        payload = _build_payload()
+
+    os.makedirs(AUTOSAVE_DIR, exist_ok=True)
+    with open(_autosave_path, "w") as f:
+        json.dump(payload, f, indent=2)
+    _last_autosave_at = datetime.now(tz=timezone.utc).isoformat()
+    logger.info("Auto-saved %d messages → %s", len(payload["messages"]), _autosave_path)
+
+
+def _autosave_loop() -> None:
+    while True:
+        time.sleep(AUTOSAVE_INTERVAL)
+        try:
+            _do_autosave()
+        except Exception as exc:
+            logger.error("Auto-save failed: %s", exc)
+
+
+@app.route("/api/save", methods=["POST"])
+def api_save():
+    target_name = _resolve_target_name()
+    now = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
+    filename = f"{now}_{_slugify(target_name)}.json"
+
+    with _messages_lock:
+        payload = _build_payload()
+
+    data = json.dumps(payload, indent=2)
+    return Response(
+        data,
+        mimetype="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.route("/api/clear", methods=["POST"])
+def api_clear():
+    global _autosave_path, _last_autosave_at
+    with _messages_lock:
+        sent_messages.clear()
+        _messages_by_id.clear()
+    map_handler.clear()
+    _autosave_path = None
+    _last_autosave_at = None
+    logger.info("Session cleared")
+    return jsonify({"ok": True})
+
+
+@app.route("/api/import", methods=["POST"])
+def api_import():
+    global _sending_enabled
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "no file provided"}), 400
+    try:
+        data = json.loads(f.read())
+    except json.JSONDecodeError as exc:
+        return jsonify({"error": f"invalid JSON: {exc}"}), 400
+
+    messages = data.get("messages")
+    if not isinstance(messages, list):
+        return jsonify({"error": "'messages' key missing or not a list"}), 400
+
+    _sending_enabled = False
+
+    with _messages_lock:
+        sent_messages.clear()
+        _messages_by_id.clear()
+        for msg in messages:
+            sent_messages.append(msg)
+            _messages_by_id[msg["messageId"]] = msg
+
+    map_points = [
+        {
+            "lat": msg["lat"],
+            "lon": msg["lon"],
+            "snr": msg.get("snr"),
+            "rssi": msg.get("rssi"),
+            "elevation": msg.get("elevation", 0.0),
+            "message_id": msg["messageId"],
+            "timestamp": msg["timestamp"],
+            "pending": msg.get("status") == "pending",
+        }
+        for msg in messages
+    ]
+    map_handler.replace_points(map_points)
+
+    logger.info("Imported %d messages from file; sending stopped", len(messages))
+    return jsonify({"imported": len(messages), "sending": _sending_enabled})
+
+
+@app.route("/api/send-interval", methods=["GET"])
+def api_get_send_interval():
+    return jsonify({"sendInterval": SEND_INTERVAL, "min": _SEND_INTERVAL_MIN, "max": _SEND_INTERVAL_MAX})
+
+
+@app.route("/api/send-interval", methods=["POST"])
+def api_set_send_interval():
+    global SEND_INTERVAL
+    body = request.get_json(silent=True) or {}
+    value = body.get("sendInterval")
+    if not isinstance(value, int) or not (_SEND_INTERVAL_MIN <= value <= _SEND_INTERVAL_MAX):
+        return jsonify({"error": f"sendInterval must be an integer between {_SEND_INTERVAL_MIN} and {_SEND_INTERVAL_MAX}"}), 400
+    SEND_INTERVAL = value
+    logger.info("Send interval updated to %d s", SEND_INTERVAL)
+    return jsonify({"sendInterval": SEND_INTERVAL})
+
+
+@app.route("/api/sending", methods=["GET"])
+def api_get_sending():
+    return jsonify({"sending": _sending_enabled})
+
+
+@app.route("/api/sending", methods=["POST"])
+def api_set_sending():
+    global _sending_enabled
+    body = request.get_json(silent=True) or {}
+    _sending_enabled = bool(body.get("sending", True))
+    logger.info("Sending %s", "started" if _sending_enabled else "stopped")
+    return jsonify({"sending": _sending_enabled})
+
+
 @app.route("/api/status")
 def api_status():
     with _messages_lock:
@@ -264,6 +455,8 @@ def api_status():
         "last_lat": last["lat"] if last else None,
         "last_lon": last["lon"] if last else None,
         "last_timestamp": last["timestamp"] if last else None,
+        "lastAutosaveAt": _last_autosave_at,
+        "autosaveInterval": AUTOSAVE_INTERVAL,
     })
 
 
@@ -282,6 +475,10 @@ def main():
 
     web_thread = threading.Thread(target=_run_web, daemon=True)
     web_thread.start()
+
+    autosave_thread = threading.Thread(target=_autosave_loop, daemon=True)
+    autosave_thread.start()
+    logger.info("Auto-save enabled every %d seconds → %s", AUTOSAVE_INTERVAL, AUTOSAVE_DIR)
     logger.info("Web server started on http://0.0.0.0:%d", WEB_PORT)
 
     logger.info("Connecting to Meshtastic on %s ...", SERIAL_PORT)
@@ -298,10 +495,11 @@ def main():
     signal.signal(signal.SIGINT, _shutdown)
 
     while True:
-        try:
-            send_location()
-        except Exception as exc:
-            logger.error("Failed to send location: %s", exc)
+        if _sending_enabled:
+            try:
+                send_location()
+            except Exception as exc:
+                logger.error("Failed to send location: %s", exc)
         time.sleep(SEND_INTERVAL)
 
 

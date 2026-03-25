@@ -15,6 +15,12 @@ def _point(lat=37.7, lon=-122.4, snr=5.0, rssi=-90, elevation=900.0,
                 message_id=message_id, timestamp=timestamp)
 
 
+def _pending_point(lat=37.7, lon=-122.4, elevation=900.0,
+                   message_id="msg-p", timestamp="2024-01-01T00:00:00+00:00") -> dict:
+    return dict(lat=lat, lon=lon, snr=None, rssi=None, elevation=elevation,
+                message_id=message_id, timestamp=timestamp, pending=True)
+
+
 # ---------------------------------------------------------------------------
 # Tests: _snr_color
 # ---------------------------------------------------------------------------
@@ -101,6 +107,51 @@ class TestRenderPointsToFile(unittest.TestCase):
         # Only first 8 chars shown
         self.assertIn("abcdefgh", content)
 
+    def test_pending_point_renders_gray(self):
+        render_points_to_file([_pending_point()], self.output)
+        with open(self.output) as f:
+            content = f.read()
+        self.assertIn("gray", content)
+
+    def test_pending_point_popup_shows_pending_status(self):
+        render_points_to_file([_pending_point()], self.output)
+        with open(self.output) as f:
+            content = f.read()
+        self.assertIn("Pending", content)
+
+    def test_pending_point_popup_omits_snr(self):
+        render_points_to_file([_pending_point()], self.output)
+        with open(self.output) as f:
+            content = f.read()
+        self.assertNotIn("SNR: None", content)
+
+    def test_heatmap_rendered_for_acked_points(self):
+        render_points_to_file(
+            [_point(), _point(lat=37.8, message_id="msg-2")], self.output
+        )
+        with open(self.output) as f:
+            content = f.read()
+        self.assertIn("heatLayer", content)
+
+    def test_heatmap_not_rendered_when_no_acked_points(self):
+        render_points_to_file([_pending_point()], self.output)
+        with open(self.output) as f:
+            content = f.read()
+        self.assertNotIn("heatLayer", content)
+
+    def test_layer_control_rendered(self):
+        render_points_to_file([_point()], self.output)
+        with open(self.output) as f:
+            content = f.read()
+        self.assertIn("L.control.layers", content)
+
+    def test_getview_setview_script_injected(self):
+        render_points_to_file([_point()], self.output)
+        with open(self.output) as f:
+            content = f.read()
+        self.assertIn("getView", content)
+        self.assertIn("setView", content)
+
 
 # ---------------------------------------------------------------------------
 # Tests: MapHandler
@@ -171,6 +222,51 @@ class TestMapHandler(unittest.TestCase):
 
         self.assertEqual(errors, [])
         self.assertEqual(len(self.handler._points), 40)
+
+    def test_add_pending_point_stores_pending_flag(self):
+        self.handler.add_pending_point(
+            lat=1.0, lon=2.0, elevation=0.0, message_id="p1", timestamp="ts"
+        )
+        self.assertEqual(len(self.handler._points), 1)
+        self.assertTrue(self.handler._points[0]["pending"] is True)
+        self.assertIsNone(self.handler._points[0]["snr"])
+
+    def test_add_pending_point_writes_file(self):
+        self.handler.add_pending_point(
+            lat=1.0, lon=2.0, elevation=0.0, message_id="p1", timestamp="ts"
+        )
+        self.assertTrue(os.path.exists(self.output))
+
+    def test_ack_point_updates_pending_flag(self):
+        self.handler.add_pending_point(
+            lat=1.0, lon=2.0, elevation=0.0, message_id="p1", timestamp="ts"
+        )
+        self.handler.ack_point(message_id="p1", snr=7.0, rssi=-80)
+        self.assertFalse(self.handler._points[0]["pending"])
+        self.assertEqual(self.handler._points[0]["snr"], 7.0)
+
+    def test_ack_point_unknown_id_is_noop(self):
+        self.handler.ack_point(message_id="nonexistent", snr=7.0, rssi=-80)
+        self.assertEqual(len(self.handler._points), 0)
+
+    def test_replace_points_swaps_all(self):
+        for i in range(3):
+            self.handler.add_point(
+                lat=float(i), lon=float(i), snr=5.0, rssi=-80,
+                elevation=0.0, message_id=f"old-{i}", timestamp="ts"
+            )
+        self.handler.replace_points([_point(message_id="new")])
+        self.assertEqual(len(self.handler._points), 1)
+        self.assertEqual(self.handler._points[0]["message_id"], "new")
+
+    def test_replace_points_with_empty_clears(self):
+        for i in range(3):
+            self.handler.add_point(
+                lat=float(i), lon=float(i), snr=5.0, rssi=-80,
+                elevation=0.0, message_id=f"old-{i}", timestamp="ts"
+            )
+        self.handler.replace_points([])
+        self.assertEqual(len(self.handler._points), 0)
 
 
 if __name__ == "__main__":
